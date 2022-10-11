@@ -8,17 +8,36 @@
 4) Figure out what clean should do
 5) Talk to Madhav about what to put in .gitignore (tools?)
 
-**Part one**
+**Part One: IP-in-UDP Encapsulation**
 1) "IP-in-UDP encapsulation"
 2) Forwarding
 
-**Part two**
+**Part Two: Routing**
 1) Routing
 
 **Random (for jack)**
 - Run the references to make sure you understand what is going on 
 
-**Questions for design check**
+## Questions for design check
 - What should clean up do
 - Thread structure
 - What is being used when one node has multiple IPs -- NAT or ARP? 
+
+## Design
+
+Three main folders:
+1) Link
+2) IP
+3) TCP
+
+Link should contain files that emulate the link layer using UDP.
+
+IP should contain files that emulate nodes that follow the IP protocol.
+
+TCP is for later. 
+
+The include folder is for headers. 
+
+## CMAKE and Make Information
+
+*Insert directions on using cmake and make*
