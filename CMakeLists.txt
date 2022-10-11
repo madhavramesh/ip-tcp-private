@@ -1,8 +1,20 @@
 cmake_minimum_required(VERSION 3.0)
 
-# project name 
+# debugging message
+message(STATUS "*** root cmake ***")
+
 project(ip)
+set(SOURCES IP/Node.cpp)
 
-# add executable for "node"
-add_executable(node IP/Node.cpp)
+# add subdirectories
+add_subdirectory(utils)
 
+add_executable(node ${SOURCES})
+target_link_libraries(node utilities)
+target_include_directories(node PRIVATE ${CMAKE_SOURCE_DIR})
+
+# debugging: prints out include directories for node
+# get_property(dirs TARGET node PROPERTY INCLUDE_DIRECTORIES)
+# foreach(dir ${dirs})
+#   message(STATUS "dir='${dir}'")
+# endforeach()

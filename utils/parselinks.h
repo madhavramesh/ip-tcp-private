@@ -1,6 +1,10 @@
 #ifndef _PARSELINKS_H_
 #define _PARSELINKS_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 #include <netinet/if_ether.h>
 #include <netinet/in.h>
@@ -24,5 +28,9 @@ typedef struct {
 // Returns a lnxinfo_t struct. Call free_links to clean up
 lnxinfo_t *parse_links(char *filename);
 void free_links(lnxinfo_t *lnx);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

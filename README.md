@@ -7,6 +7,8 @@
 3) Set up helper functions
 4) Figure out what clean should do
 5) Talk to Madhav about what to put in .gitignore (tools?)
+6) Talk about branches and how we want to do workflow
+7) CMAKE library for boost
 
 **Part One: IP-in-UDP Encapsulation**
 1) "IP-in-UDP encapsulation"
@@ -16,7 +18,12 @@
 1) Routing
 
 **Random (for jack)**
-- Run the references to make sure you understand what is going on 
+- (DONE) Run the references to make sure you understand what is going on 
+- Talk to someone about header files etc. cpp design
+- Need destructors for which functions?
+- **Structure for main/libraries etc.**
+- fprintf vs stderr 
+- interface vs public include directories/libraries
 
 ## Questions for design check
 - What should clean up do
