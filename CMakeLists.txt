@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.0)
 message(STATUS "*** root cmake ***")
 
 project(ip)
-set(SOURCES IP/Node.cpp)
+set(SOURCES src/main.cpp)
 
 # add subdirectories
 add_subdirectory(utils)
