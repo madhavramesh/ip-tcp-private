@@ -38,6 +38,11 @@ class Node {
             const std::string& payload);
 
         void registerHandler(int protocol, ProtocolHandler func);
+        /**
+         * #TODO this should forward a packet
+        */
+        void forward();
+        
 
     private:
         // Port that the socket will bind to
@@ -50,10 +55,16 @@ class Node {
         std::unordered_map<std::string, unsigned int> ARPTable;
         std::unordered_map<std::string, std::tuple<std::string, unsigned int>> routingTable;
 
+        // DS to store both sides of a single interface (dest -> src)
+        // #todo make it contain ports as well
+        std::unordered_map<std::string, std::string> dst-to-src;
+
         int calculateChecksum(std::shared_ptr<ip> ipHeader);
 
         void genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
                 size_t receivedBytes, udp::endpoint receiverEndpoint);
         void testHandler(std::shared_ptr<ip> ipHeader, std::string& data);
         void ripHandler(std::shared_ptr<ip> ipHeader, std::string& data);
+       
+
 };
