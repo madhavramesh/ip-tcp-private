@@ -1,4 +1,4 @@
-#include "include/repl/REPL.h"
+#include "include/repl/repl.h"
 #include <iostream>
 
 const int MAX_LINE_SIZE = 80;

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "include/repl/REPL.h"
+#include "include/repl/repl.h"
 #include <iostream>
 
 class IPCommands : public REPL {
