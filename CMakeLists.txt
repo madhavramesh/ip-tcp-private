@@ -12,7 +12,8 @@ message(STATUS "*** root cmake ***")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 include(Boost)
 
-set(SOURCES src/main.cpp src/repl/repl.cpp src/IP/IPCommands.cpp)
+# anytime new cpp file used in main, need to add here
+set(SOURCES src/main.cpp src/repl/repl.cpp src/IP/IPCommands.cpp src/Link/UDPLink.cpp)
 
 # add subdirectories
 add_subdirectory(utils)

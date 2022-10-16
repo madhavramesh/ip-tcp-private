@@ -1,5 +1,6 @@
 #include "include/IP/IPCommands.h"
 #include "utils/parselinks.h"
+#include "include/Link/UDPLink.h"
 
 #include <arpa/inet.h>
 #include <iostream>
@@ -53,20 +54,22 @@ int main(int argc, char *argv[]) {
         id++;
     }
 
+    // testing .
+
+    UDPLink l = UDPLink(5000);
+
+
+
+    // testing ^
+
     IPCommands repl = IPCommands();
     repl.register_commands();
-
-    // std::string text;
-    // std::cout << "> ";
-    // while (std::getline(std::cin, text)) {
-    //     std::cout << repl.eval(text) << std::endl;
-    //     std::cout << "> ";
-    // }
-
-
-    if (argc != 2) {
-        std::cerr << "usage: ./node linksfile" << std::endl;
-        return -1;
+    
+    std::string text;
+    std::cout << "> ";
+    while (std::getline(std::cin, text)) {
+        std::cout << repl.eval(text) << std::endl;
+        std::cout << "> ";
     }
 
     // Clean up
