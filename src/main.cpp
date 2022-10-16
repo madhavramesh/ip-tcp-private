@@ -27,11 +27,8 @@ int main(int argc, char *argv[]) {
     // This is the port our UDP socket should bind to
     int local_phys_port = root->local_phys_port;
 
-    // #TODO call node constructor
+    // Create node
     Node myNode = Node(local_phys_port);
-
-    // #TODO create new thread for listening
-
 
     // Loop through each interface
     lnxbody_t *curr, *next;
@@ -54,14 +51,8 @@ int main(int argc, char *argv[]) {
 
         // Add interface
         myNode.addInterface(remote_phys_port, lv_ip.to_string(), rv_ip.to_string());
-
         id++;
     }
-
-    // testing .
-
-
-    // testing ^
 
     IPCommands repl = IPCommands();
     repl.register_commands();
@@ -72,6 +63,10 @@ int main(int argc, char *argv[]) {
         std::cout << repl.eval(text) << std::endl;
         std::cout << "> ";
     }
+
+    // Start listening thread on node
+    auto receiveFunc = std::bind(&Node::receive, node);
+    std::thread thr(receiveFunc).detach();
 
     // Clean up
     free_links(root);
