@@ -24,7 +24,7 @@ class REPL {
             Command(CommandHandler f, 
                     const std::string& s, 
                     const std::vector<std::string>& p,
-                    const std::string &h) : func(f), params(p), name(s), help(h) {}
+                    const std::string& h) : func(f), name(s), params(p), help(h) {}
         };
 
         std::unordered_map<std::string, Command> commands;

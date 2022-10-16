@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../utils/REPL.h"
+#include "include/repl/REPL.h"
 #include <iostream>
 
-class IPCommands : REPL {
+class IPCommands : public REPL {
     public:
         IPCommands();
 

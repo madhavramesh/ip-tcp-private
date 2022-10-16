@@ -1,4 +1,6 @@
-#include "../../include/IP/IPCommands.h"
+#include "include/IP/IPCommands.h"
+
+IPCommands::IPCommands() {};
 
 std::string IPCommands::hello(std::vector<std::string> args) {
     return "Hello world";
