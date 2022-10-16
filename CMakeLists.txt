@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.0)
-
 project(ip-tcp)
+
+# set c++ version
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # debugging message
 message(STATUS "*** root cmake ***")
@@ -9,7 +12,7 @@ message(STATUS "*** root cmake ***")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 include(Boost)
 
-set(SOURCES src/main.cpp)
+set(SOURCES src/main.cpp src/repl/repl.cpp src/IP/IPCommands.cpp)
 
 # add subdirectories
 add_subdirectory(utils)

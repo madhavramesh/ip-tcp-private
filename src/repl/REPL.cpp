@@ -1,4 +1,6 @@
-#include "../../include/utils/REPL.h"
+#include "include/repl/REPL.h"
+
+const int MAX_LINE_SIZE = 30;
 
 REPL::REPL() {};
 
@@ -6,17 +8,13 @@ std::string REPL::eval(const std::string& text) {
     std::vector<std::string> args = parse(text);
     if (!args.empty()) {
         std::string command = args[0];
-        if (!commands.count(command)) {
-            // Call something
-            return help();
+        if (commands.count(command)) {
+            return commands.find(command)->second.func(args);
         } else {
-            args.erase(args.begin());
-            return commands[command].func(args);
+            return help();
         }
-    } else {
-        // Call something
-        return help();
     }
+    return help();
 }
 
 void REPL::register_command(CommandHandler func,
@@ -24,10 +22,10 @@ void REPL::register_command(CommandHandler func,
         const std::vector<std::string>& params,
         const std::string& help) {
     Command command = Command(func, name, params, help);
-    commands[name] = command;
+    commands.insert(make_pair(name, command));
 };
 
-std::vector<std::string> parse(const std::string& text) {
+std::vector<std::string> REPL::parse(const std::string& text) {
     std::stringstream ss(text);
     std::string word;
 
@@ -45,7 +43,7 @@ std::string REPL::help() {
         for (auto &param : command.params) {
             str += "<" + param + ">" + ' ';
         }
-        str.insert(str.end(), 80 - str.size(), ' ');
+        str.insert(str.end(), MAX_LINE_SIZE - str.size(), ' ');
         str += command.help;
     }
 

@@ -1,26 +1,16 @@
+#include "include/IP/IPCommands.h"
+#include "utils/parselinks.h"
+
 #include <arpa/inet.h>
 #include <iostream>
-#include "utils/parselinks.h"
-#include "../include/IP/IPCommands.h"
 
 #include <boost/asio.hpp>
 
 using namespace boost::asio;
 
 int main(int argc, char *argv[]) {
-    // IPCommands repl = IPCommands();
-    // repl.register_commands();
-
-    // std::string text;
-    // std::cout << "> ";
-    // while (std::getline(std::cin, text)) {
-    //     std::cout << repl.eval(text) << std::endl;
-    //     std::cout << "> ";
-    // }
-
-
     if (argc != 2) {
-        std::cerr << "usage: ./node linksfile" << std::endl;
+        std::cerr << "usage: ./node <linksfile>" << std::endl;
         return -1;
     }
 
@@ -28,7 +18,7 @@ int main(int argc, char *argv[]) {
     lnxinfo_t *root = parse_links(filename);
 
     if (root == NULL) {
-        std::cerr << "Error: invalid links file" << std::endl;
+        std::cerr << "error: invalid links file" << std::endl;
         return -1;
     }
 
@@ -59,12 +49,26 @@ int main(int argc, char *argv[]) {
         // Print out the local virtual ip and its ID
         std::cout << id << ": " << lv_ip << std::endl;
 
-
-        // Add interface 
-
+        // Add interface
         id++;
     }
-    
+
+    IPCommands repl = IPCommands();
+    repl.register_commands();
+
+    // std::string text;
+    // std::cout << "> ";
+    // while (std::getline(std::cin, text)) {
+    //     std::cout << repl.eval(text) << std::endl;
+    //     std::cout << "> ";
+    // }
+
+
+    if (argc != 2) {
+        std::cerr << "usage: ./node linksfile" << std::endl;
+        return -1;
+    }
+
     // Clean up
     free_links(root);
 }
