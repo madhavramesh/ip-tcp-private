@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.0)
 
+project(ip-tcp)
+
 # debugging message
 message(STATUS "*** root cmake ***")
 
