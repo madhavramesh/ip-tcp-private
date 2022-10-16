@@ -9,7 +9,6 @@ message(STATUS "*** root cmake ***")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 include(Boost)
 
-project(ip)
 set(SOURCES src/main.cpp)
 
 # add subdirectories
