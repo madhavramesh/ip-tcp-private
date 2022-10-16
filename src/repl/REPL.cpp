@@ -1,6 +1,8 @@
 #include "include/repl/REPL.h"
+#include <iostream>
 
-const int MAX_LINE_SIZE = 30;
+const int MAX_LINE_SIZE = 80;
+const int FUNC_NAME_SIZE = 40;
 
 REPL::REPL() {};
 
@@ -37,18 +39,22 @@ std::vector<std::string> REPL::parse(const std::string& text) {
 }
 
 std::string REPL::help() {
-    std::string str;
+    std::string finalStr;
     for (auto &[_, command] : commands) {
-        str += command.name + ' ';
+        std::string lineStr;
+        lineStr += command.name + " ";
         for (auto &param : command.params) {
-            str += "<" + param + ">" + ' ';
+            lineStr += "<" + param + ">" + " ";
         }
-        str.insert(str.end(), MAX_LINE_SIZE - str.size(), ' ');
-        str += command.help;
+
+        lineStr.insert(lineStr.end(), FUNC_NAME_SIZE - lineStr.size(), ' ');
+        lineStr += "- " + command.help;
+        finalStr += lineStr + "\n";
     }
 
-    if (str.empty()) {
-        str += "No available commands";
+    if (finalStr.empty()) {
+        finalStr += "No available commands";
     }
-    return str;
+    finalStr.pop_back();
+    return finalStr;
 }
