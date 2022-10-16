@@ -1,5 +1,6 @@
 #include "include/IP/IPCommands.h"
 #include "utils/parselinks.h"
+#include "include/IP/Node.h"
 #include "include/Link/UDPLink.h"
 
 #include <arpa/inet.h>
@@ -27,6 +28,7 @@ int main(int argc, char *argv[]) {
     int local_phys_port = root->local_phys_port;
 
     // #TODO call node constructor
+    Node myNode = Node(local_phys_port);
 
     // #TODO create new thread for listening
 
@@ -51,13 +53,12 @@ int main(int argc, char *argv[]) {
         std::cout << id << ": " << lv_ip << std::endl;
 
         // Add interface
+        myNode.addInterface(remote_phys_port, lv_ip.to_string(), rv_ip.to_string());
+
         id++;
     }
 
     // testing .
-
-    UDPLink l = UDPLink(5000);
-
 
 
     // testing ^
