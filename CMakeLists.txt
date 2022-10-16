@@ -16,7 +16,7 @@ set(SOURCES src/main.cpp)
 add_subdirectory(utils)
 
 add_executable(node ${SOURCES})
-target_link_libraries(node utilities)
+target_link_libraries(node pthread utilities ${Boost_LIBRARIES})
 target_include_directories(node PRIVATE ${CMAKE_SOURCE_DIR})
 
 # debugging: prints out include directories for node
