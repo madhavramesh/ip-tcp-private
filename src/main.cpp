@@ -21,19 +21,22 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    int local_phys_port          = root->local_phys_port;
+    // This is the port our UDP socket should bind to
+    int local_phys_port = root->local_phys_port;
 
-    // #todo print pretty
-    // std::string *lv_ip, *rv_ip;
-    // if (inet_ntop(AF_INET, &local_virt_ip, lv_ip) <= 0 || inet_ntop)
+    // #TODO call node constructor 
 
-    std::cout << "local phys port "  << local_phys_port  << std::endl;
+    // #TODO create new thread for listening
 
+
+    // Loop through each interface
     lnxbody_t *curr, *next;
+    int id = 0;
 
     for (curr = root->body; curr != NULL; curr = next) {
         next = curr->next;
 
+        /* Extracting data from the utilities parser */
         std::string remote_phys_host = curr->remote_phys_host;
         uint16_t remote_phys_port    = curr->remote_phys_port;
         uint32_t local_virt_ip       = ntohl(curr->local_virt_ip.s_addr);
@@ -42,15 +45,16 @@ int main(int argc, char *argv[]) {
         ip::address_v4 lv_ip = ip::make_address_v4(local_virt_ip);
         ip::address_v4 rv_ip = ip::make_address_v4(remote_virt_ip);
 
+        /* Print out the local virtual ip and its ID*/
+        std::cout << id << ": " << lv_ip << std::endl;
 
-        std::cout << "-----------------" << std::endl;  
-        std::cout << "remote phys host " << remote_phys_host << std::endl;
-        std::cout << "remote phys port " << remote_phys_port << std::endl;
-        std::cout << "local virt ip s_addr "    << lv_ip << std::endl;
-        std::cout << "remote virt ip s_addr "   << rv_ip << std::endl;
+
+        /* Add interface */
+
+        id++;
     }
-    std::cout << "-----------------" << std::endl;
     
+    // Clean up
     free_links(root);
 
 }
