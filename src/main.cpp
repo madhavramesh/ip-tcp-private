@@ -45,7 +45,7 @@ int main(int argc, char *argv[]) {
 
         ip::address_v4 lv_ip = ip::make_address_v4(local_virt_ip);
         ip::address_v4 rv_ip = ip::make_address_v4(remote_virt_ip);
-
+        
         // Print out the local virtual ip and its ID
         std::cout << id << ": " << lv_ip << std::endl;
 

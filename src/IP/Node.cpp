@@ -31,10 +31,10 @@ void Node::addInterface(
     std::cout << "Adding interface from " << srcAddr << ":" << port << " to " << 
     destAddr << ":" << destPort << std::endl;
 
-    // Set up ARP table
+    // 1) Set up ARP table
     ARPTable.insert(std::make_pair(destAddr, destPort));
 
-    // Set up routing table
+    // 2) Set up routing table
     // #warning? hard coding 0 and 1 as hops
     // do NOT use this to add interfaces anywhere besides initialization
 
@@ -45,6 +45,9 @@ void Node::addInterface(
     std::tuple<std::string, unsigned int> valSame = std::make_tuple(srcAddr, 1);
     // From src -> (src, 0)
     routingTable.insert(std::make_pair(srcAddr, valSame));
+
+    // 3) Set up dst -> src table
+    dst-to-src.insert(std::make_pair(dstAddr, srcAddr));
 
 }
 
@@ -82,13 +85,12 @@ int calculateChecksum(std::shared_ptr<ip> ipHeader) {
 
 
 /**
- * Sends message
+ * Sends message (from CLI)
 */
 void Node::send(
     std::string address, 
     int protocol, 
     const std::string& payload) 
-    d
 {
     // #todo handle cases where address or next hop not in arp table
     // specifically, routing table case
@@ -98,6 +100,38 @@ void Node::send(
     // Build IPv4 header
     struct ip ip_header;
 
+    ip_header.ip_hl     = 20;   // always 20 if no IP options
+    ip_header.ip_v      = 4;    // version is IPv4
+    ip_header.ip_tos    = 0;    // n/a
+    ip_header.ip_len    = htons(ip_header.ip_hl + payload.length());
+    ip_header.ip_id     = 0;    // n/a
+    ip_header.ip_off    = 0;    // n/a
+    ip_header.ip_ttl    = 16;   // initial time to live
+    ip_header.ip_p      = 17;   // UDP = 17
+    ip_header.ip_sum    = 0;    // checksum should be zeroed out b4 calc
+    ip_header.ip_src = inet_addr(dst-to-src[nextHop]);
+    ip_header.ip_dst = inet_addr(address);
+
+    // Convert ip_header to a string
+    char b[sizeof(ip)];
+    std::cpy(b, ip_header, sizeof(ip));
+    b[sizeof(ip)] = '\0'; 
+
+    std::string iph_str(b);
+    std::string new_string = iph_str + payload;
+
+    // #TODO check if this works
+    unsigned int new_size = sizeof(ip) + sizeof(payload);
+    boost::array<char, new_size> new_payload = new_string;
+
+    // #TODO 
+    // calculate checksum
+    int checksum = 0;
+    ip_header.ip_sum = checksum;
+
+    // #TODO send it via udp and check if this works
+    socket.send_to(buffer(payload), {ip::udp::v4(), destPort});
+
     
 }
 
@@ -106,7 +140,6 @@ void receive() {
         try {
             boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer;
             udp::endpoint receiverEndpoint;
-
             size_t len = socket.receive_from(buffer(receiveBuffer), receiverEndpoint);
             genericHandler(receiveBuffer, len, receiverEndpoint);
         } catch (std::exception& e) {
