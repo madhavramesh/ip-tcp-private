@@ -58,7 +58,8 @@ class Node {
         // #todo make it contain ports as well
         std::unordered_map<std::string, std::string> dstToSrc;
 
-        int calculateChecksum(std::shared_ptr<struct ip> ipHeader);
+        uint16_t ip_sum(void *buffer, int len);
+        //int calculateChecksum(std::shared_ptr<struct ip> ipHeader);
 
         // forward modifies the shared pointer
         void forward(std::shared_ptr<struct ip> ipHeader, 

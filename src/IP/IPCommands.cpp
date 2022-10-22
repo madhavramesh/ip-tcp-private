@@ -33,7 +33,12 @@ std::string IPCommands::routes(std::vector<std::string> args) {
 }
 
 std::string IPCommands::send(std::vector<std::string> args) {
-    
+    std::string address = args[1];
+    int protocol = std::stoi(args[2]);
+    std::string payload = args[3];
+    std::cout << "calling IPCommand send with args " << address << " " << protocol << " " << payload << std::endl;
+
+    node->send(address, protocol, payload);
     return "Sending";
 }
 

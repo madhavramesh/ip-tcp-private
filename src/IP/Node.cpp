@@ -53,37 +53,68 @@ std::unordered_map<std::string, std::tuple<std::string, unsigned int>> Node::get
     return routingTable;
 }
 
-int Node::calculateChecksum(std::shared_ptr<struct ip> ipHeader) {
-    int prevChecksum = ipHeader->ip_sum;
-    ipHeader->ip_sum = 0;
+// Note: copy/pasted from lecture example
+// Compute the IP checksum
+// This is a modified version of the example in RFC 1071
+// https://datatracker.ietf.org/doc/html/rfc1071#section-4.1
+uint16_t Node::ip_sum(void *buffer, int len) {
+  uint8_t *p = (uint8_t *)buffer;
+  uint16_t answer;
+  long sum = 0;
+  uint16_t odd_byte = 0;
 
-    char *data = (char *)ipHeader.get();
+  while (len > 1) {
+    uint16_t c = 0;
+    c = (p[1] << 8) | p[0];
+    
+    sum += c;
+    p += 2;
+    len -= 2;
+  }
 
-    // Initialize accumulator
-    uint32_t acc = 0xffff;
-    for (size_t i = 0; i + 1 < sizeof(ipHeader); i += 2) {
-        uint16_t word;
-        memcpy(&word, data + i, 2);
-        acc += ntohs(word);
-        if (acc > 0xffff) {
-            acc -= 0xffff;
-        }
-    }
+  if (len == 1) {
+    *(uint8_t*)&odd_byte = *p;
+    sum += odd_byte;
+  }
 
-    // Handle any partial blocks at end 
-    if (sizeof(ipHeader) % 2 == 1) {
-        uint16_t word = 0;
-        memcpy(&word, data + sizeof(ipHeader) - 1, 1);
-        acc += ntohs(word);
-        if (acc > 0xffff) {
-            acc -= 0xffff;
-        }
-    }
+  sum = (sum >> 16) + (sum & 0xffff);
+  sum += (sum >> 16);
+  answer = ~sum;
+  return answer;
 
-    ipHeader->ip_sum = prevChecksum;
-    // Return checksum in network byte order
-    return htons(~acc);
 }
+
+// int Node::calculateChecksum(std::shared_ptr<struct ip> ipHeader) {
+//     int prevChecksum = ipHeader->ip_sum;
+//     ipHeader->ip_sum = 0;
+
+//     char *data = (char *)ipHeader.get();
+
+//     // Initialize accumulator
+//     uint32_t acc = 0xffff;
+//     for (size_t i = 0; i + 1 < sizeof(ipHeader); i += 2) {
+//         uint16_t word;
+//         memcpy(&word, data + i, 2);
+//         acc += ntohs(word);
+//         if (acc > 0xffff) {
+//             acc -= 0xffff;
+//         }
+//     }
+
+//     // Handle any partial blocks at end 
+//     if (sizeof(ipHeader) % 2 == 1) {
+//         uint16_t word = 0;
+//         memcpy(&word, data + sizeof(ipHeader) - 1, 1);
+//         acc += ntohs(word);
+//         if (acc > 0xffff) {
+//             acc -= 0xffff;
+//         }
+//     }
+
+//     ipHeader->ip_sum = prevChecksum;
+//     // Return checksum in network byte order
+//     return htons(~acc);
+// }
 
 
 /**
@@ -93,26 +124,30 @@ void Node::send(
     std::string address, 
     int protocol, 
     const std::string& payload) 
-{
+{   
+    std::cout << "calling send in node" << std::endl;
+
     // #todo handle cases where address or next hop not in arp table
     // specifically, routing table case
     std::string nextHop = std::get<0>(routingTable[address]);
     unsigned int destPort = ARPTable[nextHop];
     
     // Build IPv4 header
-    std::shared_ptr<struct ip> ip_header;
+    std::shared_ptr<struct ip> ip_header = std::make_shared<struct ip>();
 
-    ip_header->ip_hl     = 20;   // always 20 if no IP options // why is there an error in compiler for this
+    ip_header->ip_hl     = 5;   // always 20 if no IP options // why is there an error in compiler for this
     ip_header->ip_v      = 4;    // version is IPv4
     ip_header->ip_tos    = 0;    // n/a
-    ip_header->ip_len    = htons(ip_header->ip_hl + payload.length());
+    ip_header->ip_len    = htons(20 + payload.length());
     ip_header->ip_id     = 0;    // n/a
     ip_header->ip_off    = 0;    // n/a
     ip_header->ip_ttl    = 16;   // initial time to live
-    ip_header->ip_p      = 17;   // UDP = 17
+    ip_header->ip_p      = 0;    // ipv6/default
     ip_header->ip_sum    = 0;    // checksum should be zeroed out b4 calc
-    ip_header->ip_src = {inet_addr(dstToSrc[nextHop].c_str())};
-    ip_header->ip_dst = {inet_addr(address.c_str())};
+    ip_header->ip_src    = {inet_addr(dstToSrc[nextHop].c_str())};
+    ip_header->ip_dst    = {inet_addr(address.c_str())};
+
+    ip_header->ip_sum = ip_sum(ip_header.get(), ip_header->ip_hl * 4);
 
     // Declare boost array that will store the new payload
     // #todo maybe fix size later
@@ -133,8 +168,6 @@ void Node::send(
 
     // #TODO 
     // calculate checksum
-    int checksum = 0;
-    ip_header->ip_sum = calculateChecksum(ip_header);
 
     // #TODO send it via udp and check if this works
     socket.send_to(buffer(new_payload), {ip::udp::v4(), destPort});
@@ -146,7 +179,7 @@ void Node::forward(std::shared_ptr<struct ip> ipHeader,
         unsigned int forwardPort) {
 
     ipHeader->ip_ttl--;
-    ipHeader->ip_sum = calculateChecksum(ipHeader);
+    ipHeader->ip_sum = ip_sum(ipHeader.get(), ipHeader->ip_len * 4);
 
     unsigned int newSize = sizeof(struct ip) + payload.size();
     std::vector<char> newPayload(newSize);
@@ -192,7 +225,7 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     std::string payload(receiveBuffer.begin() + sizeof(ipHeader), receiveBuffer.begin() + receivedBytes);
 
     // Compute checksum
-    if (calculateChecksum(ipHeader) != ipHeader->ip_sum) {
+    if (ip_sum(ipHeader.get(), ipHeader->ip_len) != (ipHeader->ip_sum * 4)) {
         return;
     }
 
