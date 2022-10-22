@@ -82,9 +82,11 @@ std::vector<Interface> Node::getInterfaces() {
 std::vector<std::tuple<std::string, std::string, int>> Node::getRoutes() {
     std::vector<std::tuple<std::string, std::string, int>> routes;
     for (auto& [destAddr, interfaceInfo] : routingTable) {
-        std::string srcAddr = ARPTable[interfaceInfo.id].srcAddr;
-        auto route = std::make_tuple(srcAddr, destAddr, interface.cost);
-        routes.push_back(route);
+        if (interfaceInfo.up) {
+            std::string srcAddr = ARPTable[interfaceInfo.id].srcAddr;
+            auto route = std::make_tuple(srcAddr, destAddr, interface.cost);
+            routes.push_back(route);
+        }
     }
     return routes;
 }
