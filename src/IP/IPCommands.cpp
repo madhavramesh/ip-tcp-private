@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;
 
 const std::vector<std::string> routesParams = "<file>";
@@ -27,52 +28,68 @@ const std::string helpInfo = "Show this help.";
 IPCommands::IPCommands(std::shared_ptr<Node> node) : node(node) {}
 
 void IPCommands::interfaces(std::string& args) {
+    std::vector<std::string> colNames = { "id", "state", "local", "remote", "port" };
 
-    return "interfaces";
+    std::ostringstream interfaceString;
+    for (auto& colName : colNames) {
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << colName << " ";
+    }
+    interfaceString << std::endl;
+
+    auto interfaces = node->getInterfaces();
+    for (auto& interface : interfaces) {
+        std::string upStr = "up" ? interface.up : "down";
+
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << interface.id << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << upStr << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << interface.srcAddr << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << interface.destAddr << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << interface.destPort << std::endl;
+    }
+
+    int spaceIdx = args.find(' ');
+    std::string filename = args.substr(0, spaceIdx);
+    if (filename.empty()) {
+        std::cout << interfaceString;
+    } else {
+        std::ofstream(filename);
+
+        ofstream << interfaceString;
+        ofstream.close();
+    }
 }
 
 void IPCommands::routes(std::string& args) {
     std::vector<std::string> colNames = { "dest", "next", "cost" };
 
-    std::string routeString;
+    std::ostringstream routeString;
     for (auto& colName : colNames) {
-        routeString.insert(routeString.end(), ROUTE_COL_SIZE - colName.size(), ' ');
-        routeString += colName;
+        routeString << std::setw(ROUTE_COL_SIZE) << colName << " ";
     }
-    routeString += "\n";
+    routeString << std::endl;
 
     auto routes = node->getRoutes();
-    for (auto& [srcName, destInfo] : routes) {
-        auto& [destName, cost] = destInfo;
-        std::string costStr = std::to_string(cost);
-
-        routeString.insert(routeString.end(), ROUTE_COL_SIZE - srcName.size(), ' ');
-        routeString += srcName;
-
-        routeString.insert(routeString.end(), ROUTE_COL_SIZE - destName.size(), ' ');
-        routeString += destName;
-
-        routeString.insert(routeString.end(), ROUTE_COL_SIZE - costStr.size(), ' ');
-        routeString += costStr;
-
-        routeString += "\n";
+    for (auto& [srcAddr, destAddr, cost] : routes) {
+        routeString << std::setw(ROUTE_COL_SIZE) << srcName << " ";
+        routeString << std::setw(ROUTE_COL_SIZE) << destName << " ";
+        routeString << std::setw(ROUTE_COL_SIZE) << cost << std::endl;;
     }
-    routeString.pop_back();
 
     int spaceIdx = args.find(' ');
     std::string filename = args.substr(0, spaceIdx);
     if (filename.empty()) {
-        std::cout << routeString << std::endl;
+        std::cout << routeString;
     } else {
         std::ofstream(filename);
 
-        ofstream << routeString << std::endl;
+        ofstream << routeString;
         ofstream.close();
     }
     return routeString;
 }
 
-std::string IPCommands::send(std::vector<std::string> args) {
+void IPCommands::send(std::string& args) {
+    // if (args.size() != )
     std::string address = args[1];
     int protocol = std::stoi(args[2]);
     std::string payload = args[3];
@@ -82,20 +99,29 @@ std::string IPCommands::send(std::vector<std::string> args) {
 }
 
 void IPCommands::up(std::string& args) {
-    return "Bringing up";
+    int spaceIdx = args.find(' ');
+    int interfaceNum = stoi(args.substr(0, spaceIdx));
+
+    if (node->enableInterface(id)) {
+        std::cout << "interface " << id << " is now enabled" << std::endl;
+    }
 }
 
 void IPCommands::down(std::string& args) {
-    return "Bringing down";
+    int spaceIdx = args.find(' ');
+    int interfaceNum = stoi(args.substr(0, spaceIdx));
+
+    if (node->disabledInterface(id)) {
+        std::cout << "interface " << id << " is now disabled" << std::endl;
+    }
 }
 
 void IPCommands::quit(std::string& args) {
     exit(0);
-    return "";
 }
 
 void IPCommands::help(std::string& args) {
-    return REPL::help();
+    REPL::help();
 }
 
 void IPCommands::register_commands() {

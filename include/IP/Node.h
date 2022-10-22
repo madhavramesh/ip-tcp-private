@@ -15,33 +15,45 @@ using namespace boost::asio;
 
 typedef std::function<void(std::shared_ptr<struct ip>, std::string&)> ProtocolHandler;
 
+struct Interface {
+    int id;
+    bool up;
+    std::string srcAddr;
+    std::string destAddr;
+    unsigned int destPort;
+};
 
 class Node {
 
     public:
         Node (unsigned int port);
 
-        /**
-         * Populates the relevant data structures for each interface
-        */
+        // Populates relevant data structures for each interface
         void addInterface(
-            uint16_t destPort, 
+            int id,
             std::string srcAddr,
-            std::string destAddr);
+            std::string destAddr,
+            unsigned int destPort);
 
-        /**
-         * Given an ip address, protocol, and payload, sends the message.
-         * First looks up necessary information and then constructs IPv4 header
-         * and then sends information.
-        */
+        // Enable an interface; Returns false if interface not found
+        bool enableInterface(int id);
+        // Disable an interface; Returns false if interface not found
+        bool disableInterface(int id);
+
+        // Returns all non-negative interfaces 
+        // (interfaces that don't have smae source and destination address)
+        std::vector<Interface> getInterfaces();
+        // Returns all possible routes in the form (source address, destination address, cost)
+        std::vector<std::tuple<std::string, std::string, int>> getRoutes();
+
+        // Constructs IPv4 header and sends packet
         void send(
             std::string address, 
             int protocol, 
             const std::string& payload);
 
+        // Registers a handler for a new protocol (can be user provided)
         void registerHandler(int protocol, ProtocolHandler func);
-        void receive();
-        std::unordered_map<std::string, std::tuple<std::string, unsigned int>> getRoutes();
 
     private:
         // Port that the socket will bind to
@@ -51,25 +63,28 @@ class Node {
 
         std::unordered_map<int, ProtocolHandler> handlers;
 
-        std::unordered_map<std::string, unsigned int> ARPTable;
-        std::unordered_map<std::string, std::tuple<std::string, unsigned int>> routingTable;
-
-        // DS to store both sides of a single interface (dest -> src)
-        // #todo make it contain ports as well
-        std::unordered_map<std::string, std::string> dstToSrc;
+        // ARP Table: interface id -> interface
+        std::unordered_map<int, Interface> ARPTable;
+        // Routing Table: destination address -> (next hop interface, cost)
+        std::unordered_map<std::string, std::tuple<int, int>> routingTable;
 
         uint16_t ip_sum(void *buffer, int len);
-        //int calculateChecksum(std::shared_ptr<struct ip> ipHeader);
 
-        // forward modifies the shared pointer
+        // Calculates checksum of an IP Header
+        int calculateChecksum(std::shared_ptr<struct ip> ipHeader);
+
+        // Forwards a packet to destination
+        // NOTE: Modifies shared pointer
         void forward(std::shared_ptr<struct ip> ipHeader, 
             const std::string& payload,
             unsigned int forwardPort);
 
+        // Loops infinitely while receiving packets
+        void receive();
+
+        // Handlers for printing to stdout/files and implementing RIP 
         void genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
                 size_t receivedBytes, boost::asio::ip::udp::endpoint receiverEndpoint);
         void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
-       
-
 };

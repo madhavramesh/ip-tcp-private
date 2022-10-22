@@ -37,7 +37,8 @@ int main(int argc, char *argv[]) {
 
     // Loop through each interface
     lnxbody_t *curr, *next;
-    int id = 0;
+    int posId = 0;
+    int negId = -1;
 
     for (curr = root->body; curr != NULL; curr = next) {
         next = curr->next;
@@ -55,8 +56,11 @@ int main(int argc, char *argv[]) {
         std::cout << id << ": " << lv_ip << std::endl;
 
         // Add interface
-        node->addInterface(remote_phys_port, lv_ip.to_string(), rv_ip.to_string());
-        id++;
+        node->addInterface(posId, lv_ip.to_string(), rv_ip.to_string(), remote_phys_port, 1);
+        node->addInterface(negId, lv_ip.to_string(), lv_ip.to_string(), local_phys_port, 0);
+
+        posId++;
+        negId--;
     }
 
     IPCommands repl = IPCommands(node);
