@@ -65,7 +65,7 @@ int main(int argc, char *argv[]) {
     std::string text;
     std::cout << "> ";
     while (std::getline(std::cin, text)) {
-        std::cout << repl.eval(text) << std::endl;
+        repl.eval(text);
         std::cout << "> ";
     }
 
