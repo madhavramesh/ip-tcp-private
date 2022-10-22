@@ -10,7 +10,7 @@ void REPL::eval(const std::string &text) {
   int spaceIdx = text.find(' ');
   std::string command = text.substr(0, spaceIdx);
 
-  if (!args.empty()) {
+  if (!text.empty()) {
     if (commands.count(command)) {
       commands.find(command)->second.func(text.substr(spaceIdx + 1));
     } else {

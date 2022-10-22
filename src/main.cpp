@@ -59,6 +59,10 @@ int main(int argc, char *argv[]) {
         id++;
     }
 
+    // Start listening thread on node
+    auto receiveFunc = std::bind(&Node::receive, node);
+    std::thread(receiveFunc).detach();
+
     IPCommands repl = IPCommands(node);
     repl.register_commands();
     
@@ -68,10 +72,6 @@ int main(int argc, char *argv[]) {
         repl.eval(text);
         std::cout << "> ";
     }
-
-    // Start listening thread on node
-    // auto receiveFunc = std::bind(&Node::receive, node);
-    // std::thread(receiveFunc).detach();
 
     // Clean up
     free_links(root);

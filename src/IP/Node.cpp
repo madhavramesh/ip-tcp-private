@@ -142,7 +142,7 @@ void Node::send(
     ip_header->ip_id     = 0;    // n/a
     ip_header->ip_off    = 0;    // n/a
     ip_header->ip_ttl    = 16;   // initial time to live
-    ip_header->ip_p      = 0;    // ipv6/default
+    ip_header->ip_p      = protocol;    // ipv6/default
     ip_header->ip_sum    = 0;    // checksum should be zeroed out b4 calc
     ip_header->ip_src    = {inet_addr(dstToSrc[nextHop].c_str())};
     ip_header->ip_dst    = {inet_addr(address.c_str())};
@@ -217,17 +217,20 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
 
     struct ip *ipHeaderRaw = (struct ip *)(&receiveBuffer[0]);
 
+    // Get payload/data from IP packet
+    std::string payload(receiveBuffer.begin() + sizeof(ipHeader), receiveBuffer.begin() + receivedBytes);
+
     // Reconstruct IPv4 header
     std::shared_ptr<struct ip> ipHeader = std::make_shared<struct ip>();
     memcpy(ipHeader.get(), ipHeaderRaw, sizeof(ipHeaderRaw));
-
-    // Get payload/data from IP packet
-    std::string payload(receiveBuffer.begin() + sizeof(ipHeader), receiveBuffer.begin() + receivedBytes);
 
     // Compute checksum
     if (ip_sum(ipHeader.get(), ipHeader->ip_len) != (ipHeader->ip_sum * 4)) {
         return;
     }
+
+    // check 
+    // branch here
 
     // Is the destination address in the routing table?
     if (!routingTable.count(ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr)).to_string())) {
