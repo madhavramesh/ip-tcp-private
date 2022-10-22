@@ -39,6 +39,8 @@ class Node {
 
         void registerHandler(int protocol, ProtocolHandler func);
 
+        std::unordered_map<std::string, std::tuple<std::string, unsigned int>> getRoutes();
+
     private:
         // Port that the socket will bind to
         unsigned int port;
