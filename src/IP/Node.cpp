@@ -1,5 +1,6 @@
 #include "include/IP/Node.h"
 
+
 /**
  * Constructor
 */
@@ -8,7 +9,6 @@ Node::Node(unsigned int port) :
     // my_endpoint(ip::udp::v4(), port),
     socket(my_io_context, {ip::udp::v4(), port}),
     // socket(my_io_context, my_endpoint)
-    handler()
 {
     std::cout << "Constructing node at port " << port << std::endl;
     using namespace std::placeholders;
@@ -24,7 +24,7 @@ Node::Node(unsigned int port) :
  * Adds interface 
 */
 void Node::addInterface(
-    unsigned int destPort, 
+    uint16_t destPort, 
     std::string srcAddr,
     std::string destAddr) 
 {
@@ -47,7 +47,7 @@ void Node::addInterface(
     routingTable.insert(std::make_pair(srcAddr, valSame));
 
     // 3) Set up dst -> src table
-    dst-to-src.insert(std::make_pair(dstAddr, srcAddr));
+    dstToSrc.insert(std::make_pair(dstAddr, srcAddr));
 
 }
 
@@ -98,44 +98,47 @@ void Node::send(
     unsigned int destPort = ARPTable[nextHop];
     
     // Build IPv4 header
-    struct ip ip_header;
+    std::shared_ptr<ip> ip_header;
 
-    ip_header.ip_hl     = 20;   // always 20 if no IP options
-    ip_header.ip_v      = 4;    // version is IPv4
-    ip_header.ip_tos    = 0;    // n/a
-    ip_header.ip_len    = htons(ip_header.ip_hl + payload.length());
-    ip_header.ip_id     = 0;    // n/a
-    ip_header.ip_off    = 0;    // n/a
-    ip_header.ip_ttl    = 16;   // initial time to live
-    ip_header.ip_p      = 17;   // UDP = 17
-    ip_header.ip_sum    = 0;    // checksum should be zeroed out b4 calc
-    ip_header.ip_src = inet_addr(dst-to-src[nextHop]);
-    ip_header.ip_dst = inet_addr(address);
+    ip_header->ip_hl     = 20;   // always 20 if no IP options
+    ip_header->ip_v      = 4;    // version is IPv4
+    ip_header->ip_tos    = 0;    // n/a
+    ip_header->ip_len    = htons(ip_header->ip_hl + payload->length());
+    ip_header->ip_id     = 0;    // n/a
+    ip_header->ip_off    = 0;    // n/a
+    ip_header->ip_ttl    = 16;   // initial time to live
+    ip_header->ip_p      = 17;   // UDP = 17
+    ip_header->ip_sum    = 0;    // checksum should be zeroed out b4 calc
+    ip_header->ip_src = inet_addr(dstToSrc[nextHop]);
+    ip_header->ip_dst = inet_addr(address);
 
-    // Convert ip_header to a string
-    char b[sizeof(ip)];
-    std::cpy(b, ip_header, sizeof(ip));
-    b[sizeof(ip)] = '\0'; 
+    // Declare boost array that will store the new payload
+    unsigned int new_size = sizeof(ip) + payload.size();
+    boost::array<char, new_size> new_payload;
 
-    std::string iph_str(b);
-    std::string new_string = iph_str + payload;
+    // Copy contents of old ip header and payload into new payload
+    memcpy(new_payload, ip_header.get(), sizeof(ip));
+    memcpy(new_payload + sizeof(ip), &payload, payload.size());
+    
+    // // Convert ip_header to a string
+    // char b[sizeof(ip)];
+    // std::cpy(b, ip_header, sizeof(ip));
+    // b[sizeof(ip)] = '\0'; 
 
-    // #TODO check if this works
-    unsigned int new_size = sizeof(ip) + sizeof(payload);
-    boost::array<char, new_size> new_payload = new_string;
+    // std::string iph_str(b);
+    // std::string new_string = iph_str + payload;
 
     // #TODO 
     // calculate checksum
     int checksum = 0;
-    ip_header.ip_sum = checksum;
+    ip_header->ip_sum = calculateChecksum(ip_header->ip_sum);
 
     // #TODO send it via udp and check if this works
-    socket.send_to(buffer(payload), {ip::udp::v4(), destPort});
-
+    socket.send_to(buffer(new_payload), {ip::udp::v4(), destPort});
     
 }
 
-void receive() {
+void Node::receive() {
     while (true) {
         try {
             boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer;

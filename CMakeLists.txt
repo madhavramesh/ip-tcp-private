@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.0)
 project(ip-tcp)
 
 # set c++ version
-set(CMAKE_CXX_COMPILERi "/usr/bin/clang++")
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -14,7 +13,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 include(Boost)
 
 # anytime new cpp file used in main, need to add here
-set(SOURCES src/main.cpp src/repl/repl.cpp src/IP/IPCommands.cpp src/Link/UDPLink.cpp src/repl/handler.cpp)
+set(SOURCES src/main.cpp src/IP/Node.cpp src/repl/REPL.cpp src/IP/IPCommands.cpp src/Link/UDPLink.cpp)
 
 # add subdirectories
 add_subdirectory(utils)

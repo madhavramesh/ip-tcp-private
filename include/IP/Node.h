@@ -1,21 +1,23 @@
 #pragma once
 
-#include "include/repl/handler.h"
-
 #include <iostream>
 #include <string>
 #include <unordered_map>
+#include <tuple>
 
 #include <boost/asio.hpp>
+#include <boost/array.hpp>
 #include <netinet/ip.h>
 
 const int MAX_IP_PACKET_SIZE = 1400;
 
-typedef std::function<void(std::shared_ptr<ip>, std::string&)> ProtocolHandler;
-
 using namespace boost::asio;
 
+typedef std::function<void(std::shared_ptr<struct ip>, std::string&)> ProtocolHandler;
+
+
 class Node {
+
     public:
         Node (unsigned int port);
 
@@ -23,7 +25,7 @@ class Node {
          * Populates the relevant data structures for each interface
         */
         void addInterface(
-            unsigned int destPort, 
+            uint16_t destPort, 
             std::string srcAddr,
             std::string destAddr);
 
@@ -42,13 +44,15 @@ class Node {
          * #TODO this should forward a packet
         */
         void forward();
+
+        void receive();
         
 
     private:
         // Port that the socket will bind to
         unsigned int port;
-        io_context my_io_context;
-        ip::udp::socket socket;
+        boost::asio::io_context my_io_context;
+        boost::asio::ip::udp::socket socket;
 
         std::unordered_map<int, ProtocolHandler> handlers;
 
@@ -57,14 +61,14 @@ class Node {
 
         // DS to store both sides of a single interface (dest -> src)
         // #todo make it contain ports as well
-        std::unordered_map<std::string, std::string> dst-to-src;
+        std::unordered_map<std::string, std::string> dstToSrc;
 
-        int calculateChecksum(std::shared_ptr<ip> ipHeader);
+        int calculateChecksum(std::shared_ptr<struct ip> ipHeader);
 
         void genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
-                size_t receivedBytes, udp::endpoint receiverEndpoint);
-        void testHandler(std::shared_ptr<ip> ipHeader, std::string& data);
-        void ripHandler(std::shared_ptr<ip> ipHeader, std::string& data);
+                size_t receivedBytes, boost::asio::ip::udp::endpoint receiverEndpoint);
+        void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
+        void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
        
 
 };

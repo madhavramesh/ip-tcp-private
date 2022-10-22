@@ -1,7 +1,6 @@
 #include "include/IP/IPCommands.h"
 #include "utils/parselinks.h"
 #include "include/IP/Node.h"
-#include "include/Link/UDPLink.h"
 
 #include <arpa/inet.h>
 #include <iostream>
@@ -9,6 +8,10 @@
 #include <boost/asio.hpp>
 
 using namespace boost::asio;
+
+void receiveFunc() {
+    std::cout << "receive func" << std::endl;
+}
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -25,10 +28,10 @@ int main(int argc, char *argv[]) {
     }
 
     // This is the port our UDP socket should bind to
-    int local_phys_port = root->local_phys_port;
+    unsigned int local_phys_port = root->local_phys_port;
 
     // Create node
-    Node myNode = Node(local_phys_port);
+    Node node = Node(local_phys_port);
 
     // Loop through each interface
     lnxbody_t *curr, *next;
@@ -50,7 +53,7 @@ int main(int argc, char *argv[]) {
         std::cout << id << ": " << lv_ip << std::endl;
 
         // Add interface
-        myNode.addInterface(remote_phys_port, lv_ip.to_string(), rv_ip.to_string());
+        node.addInterface(remote_phys_port, lv_ip.to_string(), rv_ip.to_string());
         id++;
     }
 
@@ -65,8 +68,8 @@ int main(int argc, char *argv[]) {
     }
 
     // Start listening thread on node
-    auto receiveFunc = std::bind(&Node::receive, node);
-    std::thread thr(receiveFunc).detach();
+    // auto receiveFunc = std::bind(&Node::receive, node);
+    // std::thread(receiveFunc).detach();
 
     // Clean up
     free_links(root);
