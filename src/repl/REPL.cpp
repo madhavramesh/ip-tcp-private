@@ -10,9 +10,14 @@ void REPL::eval(const std::string &text) {
   int spaceIdx = text.find(' ');
   std::string command = text.substr(0, spaceIdx);
 
+  std::string remaining = "";
+  if (spaceIdx != std::string::npos) {
+      remaining = text.substr(spaceIdx + 1);
+  }
+
   if (!text.empty()) {
     if (commands.count(command)) {
-      commands.find(command)->second.func(text.substr(spaceIdx + 1));
+      commands.find(command)->second.func(remaining);
     } else {
       help();
     }
@@ -28,7 +33,7 @@ void REPL::register_command(CommandHandler func, const std::string &name,
   commands.insert(make_pair(name, command));
 };
 
-std::string REPL::help() {
+void REPL::help() {
   std::string finalStr;
   for (auto &[_, command] : commands) {
     std::string lineStr;
@@ -43,6 +48,6 @@ std::string REPL::help() {
   if (finalStr.empty()) {
     finalStr += "No available commands";
   }
-  finalStr.pop_back();
-  return finalStr;
+
+  std::cout << finalStr;
 }

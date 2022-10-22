@@ -22,35 +22,75 @@ Node::Node(unsigned int port) :
  * Adds interface 
 */
 void Node::addInterface(
-    uint16_t destPort, 
+    int id,
     std::string srcAddr,
-    std::string destAddr) 
+    std::string destAddr,
+    unsigned int destPort,
+    int cost) 
 {
-    std::cout << "Adding interface from " << srcAddr << ":" << port << " to " << 
-    destAddr << ":" << destPort << std::endl;
+    Interface interface;
+    interface.id = id;
+    interface.up = true;
+    interface.srcAddr = srcAddr;
+    interface.destAddr = destAddr;
+    interface.destPort = destPort;
 
     // 1) Set up ARP table
-    ARPTable.insert(std::make_pair(destAddr, destPort));
+    ARPTable.insert(std::make_pair(id, interface));
 
     // 2) Set up routing table
-    // #warning? hard coding 0 and 1 as hops
-    // do NOT use this to add interfaces anywhere besides initialization
-
-    std::tuple<std::string, unsigned int> valDiff = std::make_tuple(destAddr, 1);
-    // From dest -> (src, 1)
-    routingTable.insert(std::make_pair(destAddr, valDiff));
-
-    std::tuple<std::string, unsigned int> valSame = std::make_tuple(srcAddr, 1);
-    // From src -> (src, 0)
-    routingTable.insert(std::make_pair(srcAddr, valSame));
-
-    // 3) Set up dst -> src table
-    dstToSrc.insert(std::make_pair(destAddr, srcAddr));
-
+    std::tuple<int, int> nextHop = std::make_tuple(id, cost);
+    routingTable.insert(std::make_pair(destAddr, nextHop));
 }
 
-std::unordered_map<std::string, std::tuple<std::string, unsigned int>> Node::getRoutes() {
-    return routingTable;
+bool Node::enableInterface(int id) {
+    if (!ARPTable.count(id)) {
+        std::cerr << "interface " << id << " does not exist" << std::endl;
+        return false;
+    } else if (ARPTable[id].up) {
+        std::cerr << "interface " << id << " is already up" << std::endl;
+        return false;
+    }
+
+    ARPTable[id].up = true;
+    return true;
+}
+
+bool Node::disableInterface(int id) {
+    if (!ARPTable.count(id)) {
+        std::cerr << "interface " << id << " does not exist" << std::endl;
+        return false;
+    } else if (!ARPTable[id].up) {
+        std::cerr << "interface " << id << " is already down" << std::endl;
+        return false;
+    }
+
+    ARPTable[id].up = false;
+    return true;
+}
+
+std::vector<Interface> Node::getInterfaces() {
+    std::vector<Interface> interfaces;
+    for (auto& [_, interface] : ARPTable) {
+        if (interface.id >= 0) {
+            interfaces.push_back(interface);
+        }
+    }
+    return interfaces;
+}
+
+std::vector<std::tuple<std::string, std::string, int>> Node::getRoutes() {
+    std::vector<std::tuple<std::string, std::string, int>> routes;
+    for (auto& [destAddr, interfaceInfo] : routingTable) {
+        auto [id, cost] = interfaceInfo;
+
+        Interface& interface = ARPTable[id];
+        if (interface.up) {
+            auto route = std::make_tuple(destAddr, interface.destAddr, cost);
+            routes.push_back(route);
+        }
+    }
+    return routes;
 }
 
 // Note: copy/pasted from lecture example
@@ -129,8 +169,16 @@ void Node::send(
 
     // #todo handle cases where address or next hop not in arp table
     // specifically, routing table case
-    std::string nextHop = std::get<0>(routingTable[address]);
-    unsigned int destPort = ARPTable[nextHop];
+    auto [nextHop, cost] = routingTable[address];
+
+    // Check if interface has been disabled
+    if (!ARPTable[nextHop].up) {
+        std::cerr << "Cannot send to " << address << ", it is an unreachable address." << std::endl;
+        return;
+    }
+
+    unsigned int destPort = ARPTable[nextHop].destPort;
+    std::string srcAddr = ARPTable[nextHop].srcAddr;
     
     // Build IPv4 header
     std::shared_ptr<struct ip> ip_header = std::make_shared<struct ip>();
@@ -144,7 +192,7 @@ void Node::send(
     ip_header->ip_ttl    = 16;   // initial time to live
     ip_header->ip_p      = protocol;    // ipv6/default
     ip_header->ip_sum    = 0;    // checksum should be zeroed out b4 calc
-    ip_header->ip_src    = {inet_addr(dstToSrc[nextHop].c_str())};
+    ip_header->ip_src    = {inet_addr(srcAddr.c_str())};
     ip_header->ip_dst    = {inet_addr(address.c_str())};
 
     ip_header->ip_sum = ip_sum(ip_header.get(), ip_header->ip_hl * 4);
@@ -166,12 +214,8 @@ void Node::send(
     // std::string iph_str(b);
     // std::string new_string = iph_str + payload;
 
-    // #TODO 
-    // calculate checksum
-
     // #TODO send it via udp and check if this works
     socket.send_to(buffer(new_payload), {ip::udp::v4(), destPort});
-    
 }
 
 void Node::forward(std::shared_ptr<struct ip> ipHeader, 
@@ -238,8 +282,14 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     }
 
     // Calculate whether packet has reached destination
-    std::string nextHop = std::get<0>(routingTable[ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr)).to_string()]);
-    unsigned int destPort = ARPTable[nextHop];
+    auto [nextHop, cost] = routingTable[ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr)).to_string()];
+
+    // Check if interface has been disabled
+    if (!ARPTable[nextHop].up) {
+        return;
+    }
+
+    unsigned int destPort = ARPTable[nextHop].destPort;
     if (destPort == port) {
         if (handlers.count(ipHeader->ip_p)) {
             handlers.find(ipHeader->ip_p)->second(ipHeader, payload);
