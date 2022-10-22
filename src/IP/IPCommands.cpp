@@ -2,17 +2,39 @@
 
 #include <string>
 
-IPCommands::IPCommands() {}
+const int ROUTE_COL_SIZE = 15;
+
+IPCommands::IPCommands(std::shared_ptr<Node> node) node(node) {}
 
 std::string IPCommands::interfaces(std::vector<std::string> args) {
+
     return "interfaces";
 }
 
 std::string IPCommands::routes(std::vector<std::string> args) {
+    // if (args.size() > 1) {
+        // return "";
+    // }
+//
+    // std::vector<std::string> colNames = { "dest", "next", "cost" };
+//
+    // std::string routeString;
+    // for (auto& colName : colNames) {
+        // routeString.insert(routeString.end(), ROUTE_COL_SIZE - colName.size(), ' ');
+        // routeString += colName;
+    // }
+//
+    // auto routes = node->getRoutes();
+    // for (auto& [srcName, destInfo] : routes) {
+        // auto& [destName, cost] = destInfo;
+        // std::cout << srcName << " " << destName << " " << std::to_string(cost) << std::endl;
+    // }
     return "Routes";
 }
 
 std::string IPCommands::send(std::vector<std::string> args) {
+
+    node->send();
     return "Sending";
 }
 

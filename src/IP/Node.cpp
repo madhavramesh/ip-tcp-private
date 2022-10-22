@@ -8,7 +8,6 @@ Node::Node(unsigned int port) :
     // my_endpoint(ip::udp::v4(), port),
     socket(my_io_context, {ip::udp::v4(), port}),
     // socket(my_io_context, my_endpoint)
-    handler()
 {
     std::cout << "Constructing node at port " << port << std::endl;
     using namespace std::placeholders;
@@ -49,6 +48,10 @@ void Node::addInterface(
     // 3) Set up dst -> src table
     dst-to-src.insert(std::make_pair(dstAddr, srcAddr));
 
+}
+
+std::unordered_map<std::string, std::tuple<std::string, unsigned int>> getRoutes() {
+    return routingTable;
 }
 
 int calculateChecksum(std::shared_ptr<ip> ipHeader) {
@@ -135,11 +138,28 @@ void Node::send(
     
 }
 
+void Node::forward(std::shared_ptr<ip> ipHeader, 
+        const std::string& payload, 
+        unsigned int forwardPort) {
+
+    ipHeader->ip_ttl--;
+    ipHeader->ip_sum = calculateChecksum(ipHeader);
+
+    unsigned int newSize = sizeof(ip) + payload.size();
+    boost::array<char, newSize> newPayload;
+
+    memcpy(&newPayload[0], ipHeader.get(), sizeof(ip));
+    memcpy(&newPayload[sizeof(ip)], &payload[0], payload.size());
+
+    socket.send_to(buffer(newPayload), {ip::udp::v4(), forwardPort});
+}
+
 void receive() {
     while (true) {
         try {
             boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer;
             udp::endpoint receiverEndpoint;
+
             size_t len = socket.receive_from(buffer(receiveBuffer), receiverEndpoint);
             genericHandler(receiveBuffer, len, receiverEndpoint);
         } catch (std::exception& e) {
@@ -179,17 +199,18 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     }
 
     // Calculate whether packet has reached destination
-    std::string nextHop = std::get<1>(routingTable[ipHeader->ip_dst.s_addr]);
+    std::string nextHop = std::get<0>(routingTable[ipHeader->ip_dst.s_addr]);
     unsigned int destPort = ARPTable[nextHop];
     if (destPort == port) {
         if (handlers.count(ipHeader->ip_p)) {
-            handlers.find(ipHeader->ip_p)->second(std::move(ipHeader), payload);
+            handlers.find(ipHeader->ip_p)->second(ipHeader, payload);
         }
         throw std::runtime_error("Error: handler for protocol " + 
                 std::to_string(ipHeader->ip_p) + " not found");
     }
 
     // Packet has not reached destination so forward packet
+    forward(ipHeader, payload, destPort);
 }
 
 void Node::testHandler(std::shared_ptr<ip> ipHeader, std::string& data) {
