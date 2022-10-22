@@ -40,13 +40,8 @@ class Node {
             const std::string& payload);
 
         void registerHandler(int protocol, ProtocolHandler func);
-        /**
-         * #TODO this should forward a packet
-        */
-        void forward();
-
         void receive();
-        
+        std::unordered_map<std::string, std::tuple<std::string, unsigned int>> getRoutes();
 
     private:
         // Port that the socket will bind to
@@ -64,6 +59,11 @@ class Node {
         std::unordered_map<std::string, std::string> dstToSrc;
 
         int calculateChecksum(std::shared_ptr<struct ip> ipHeader);
+
+        // forward modifies the shared pointer
+        void forward(std::shared_ptr<ip> ipHeader, 
+            const std::string& payload,
+            unsigned int forwardPort);
 
         void genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
                 size_t receivedBytes, boost::asio::ip::udp::endpoint receiverEndpoint);

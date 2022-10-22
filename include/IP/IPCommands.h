@@ -18,4 +18,7 @@ class IPCommands : public REPL {
 
         std::string help(std::vector<std::string> args);
         void register_commands() override;
+
+    private:
+        std::shared_ptr<Node> node;
 };
