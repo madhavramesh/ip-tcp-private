@@ -95,7 +95,7 @@ void IPCommands::send(std::string& args) {
     // int protocol = std::stoi(args[2]);
     // std::string payload = args[3];
     // std::cout << "calling IPCommand send with args " << address << " " << protocol << " " << payload << std::endl;
-//
+
     // node->send(address, protocol, payload);
     std::cout << "Sending" << std::endl;
 }
