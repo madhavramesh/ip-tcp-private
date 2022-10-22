@@ -36,14 +36,14 @@ void Node::addInterface(
     interface.destPort = destPort;
 
     // 1) Set up ARP table
-    ARPTable.insert(std::make_pair(destAddr, interface));
+    ARPTable.insert(std::make_pair(id, interface));
 
     // 2) Set up routing table
-    std::tuple<int, int> valDiff = std::make_tuple(id, cost);
-    routingTable.insert(std::make_pair(id, cost));
+    std::tuple<int, int> nextHop = std::make_tuple(id, cost);
+    routingTable.insert(std::make_pair(destAddr, nextHop));
 }
 
-bool enableInterface(int id) {
+bool Node::enableInterface(int id) {
     if (!ARPTable.count(id)) {
         std::cerr << "interface " << id << " does not exist" << std::endl;
         return false;
@@ -56,7 +56,7 @@ bool enableInterface(int id) {
     return true;
 }
 
-bool disableInterface(int id) {
+bool Node::disableInterface(int id) {
     if (!ARPTable.count(id)) {
         std::cerr << "interface " << id << " does not exist" << std::endl;
         return false;
@@ -82,9 +82,11 @@ std::vector<Interface> Node::getInterfaces() {
 std::vector<std::tuple<std::string, std::string, int>> Node::getRoutes() {
     std::vector<std::tuple<std::string, std::string, int>> routes;
     for (auto& [destAddr, interfaceInfo] : routingTable) {
-        if (interfaceInfo.up) {
-            std::string srcAddr = ARPTable[interfaceInfo.id].srcAddr;
-            auto route = std::make_tuple(srcAddr, destAddr, interface.cost);
+        auto [id, cost] = interfaceInfo;
+
+        Interface& interface = ARPTable[id];
+        if (interface.up) {
+            auto route = std::make_tuple(destAddr, interface.destAddr, cost);
             routes.push_back(route);
         }
     }
@@ -167,7 +169,7 @@ void Node::send(
 
     // #todo handle cases where address or next hop not in arp table
     // specifically, routing table case
-    int nextHop = routingTable[address];
+    auto [nextHop, cost] = routingTable[address];
 
     // Check if interface has been disabled
     if (!ARPTable[nextHop].up) {
@@ -277,7 +279,7 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     }
 
     // Calculate whether packet has reached destination
-    int nextHop = routingTable[ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr)).to_string()];
+    auto [nextHop, cost] = routingTable[ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr)).to_string()];
 
     // Check if interface has been disabled
     if (!ARPTable[nextHop].up) {

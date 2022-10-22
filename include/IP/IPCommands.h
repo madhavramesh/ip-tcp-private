@@ -9,16 +9,16 @@ class IPCommands : public REPL {
     public:
         IPCommands(std::shared_ptr<Node> node);
 
-        std::string interfaces(std::vector<std::string> args);
-        std::string routes(std::vector<std::string> args);
+        void interfaces(std::string& args);
+        void routes(std::string& args);
 
-        std::string send(std::vector<std::string> args);
+        void send(std::string& args);
 
-        std::string up(std::vector<std::string> args);
-        std::string down(std::vector<std::string> args);
-        std::string quit(std::vector<std::string> args);
+        void up(std::string& args);
+        void down(std::string& args);
+        void quit(std::string& args);
 
-        std::string help(std::vector<std::string> args);
+        void help(std::string& args);
         void register_commands() override;
 
     private:

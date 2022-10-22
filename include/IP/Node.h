@@ -33,7 +33,8 @@ class Node {
             int id,
             std::string srcAddr,
             std::string destAddr,
-            unsigned int destPort);
+            unsigned int destPort,
+            int cost);
 
         // Enable an interface; Returns false if interface not found
         bool enableInterface(int id);

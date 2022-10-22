@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
-typedef std::function<void(std::string)> CommandHandler;
+typedef std::function<void(std::string&)> CommandHandler;
 
 class REPL {
     public:
@@ -33,5 +33,5 @@ class REPL {
                 const std::string& name, 
                 const std::string& params,
                 const std::string& help);
-        std::string help();
+        void help();
 };

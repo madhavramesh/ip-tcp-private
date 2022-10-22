@@ -2,14 +2,16 @@
 
 #include <string>
 #include <vector>
+#include <fstream>
+#include <iomanip>
 
 const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;
 
-const std::vector<std::string> routesParams = "<file>";
-const std::vector<std::string> sendParams = "<ip> <proto> <string>";
-const std::vector<std::string> upParams = "<interface-num>";
-const std::vector<std::string> downParams = "<interface-num>";
+const std::string routesParams = "<file>";
+const std::string sendParams = "<ip> <proto> <string>";
+const std::string upParams = "<interface-num>";
+const std::string downParams = "<interface-num>";
 
 const std::string interfacesInfo = 
     "Print information about each interface, one per line. "
@@ -38,7 +40,7 @@ void IPCommands::interfaces(std::string& args) {
 
     auto interfaces = node->getInterfaces();
     for (auto& interface : interfaces) {
-        std::string upStr = "up" ? interface.up : "down";
+        std::string upStr = interface.up ? "up" : "down";
 
         interfaceString << std::setw(INTERFACE_COL_SIZE) << interface.id << " ";
         interfaceString << std::setw(INTERFACE_COL_SIZE) << upStr << " ";
@@ -50,12 +52,12 @@ void IPCommands::interfaces(std::string& args) {
     int spaceIdx = args.find(' ');
     std::string filename = args.substr(0, spaceIdx);
     if (filename.empty()) {
-        std::cout << interfaceString;
+        std::cout << interfaceString.str();
     } else {
-        std::ofstream(filename);
+        std::ofstream file(filename);
 
-        ofstream << interfaceString;
-        ofstream.close();
+        file << interfaceString.str();
+        file.close();
     }
 }
 
@@ -70,40 +72,40 @@ void IPCommands::routes(std::string& args) {
 
     auto routes = node->getRoutes();
     for (auto& [srcAddr, destAddr, cost] : routes) {
-        routeString << std::setw(ROUTE_COL_SIZE) << srcName << " ";
-        routeString << std::setw(ROUTE_COL_SIZE) << destName << " ";
+        routeString << std::setw(ROUTE_COL_SIZE) << srcAddr << " ";
+        routeString << std::setw(ROUTE_COL_SIZE) << destAddr << " ";
         routeString << std::setw(ROUTE_COL_SIZE) << cost << std::endl;;
     }
 
     int spaceIdx = args.find(' ');
     std::string filename = args.substr(0, spaceIdx);
     if (filename.empty()) {
-        std::cout << routeString;
+        std::cout << routeString.str();
     } else {
-        std::ofstream(filename);
+        std::ofstream file(filename);
 
-        ofstream << routeString;
-        ofstream.close();
+        file << routeString.str();
+        file.close();
     }
-    return routeString;
 }
 
 void IPCommands::send(std::string& args) {
     // if (args.size() != )
-    std::string address = args[1];
-    int protocol = std::stoi(args[2]);
-    std::string payload = args[3];
-    std::cout << "calling IPCommand send with args " << address << " " << protocol << " " << payload << std::endl;
-
-    node->send(address, protocol, payload);
+    // std::string address = args[1];
+    // int protocol = std::stoi(args[2]);
+    // std::string payload = args[3];
+    // std::cout << "calling IPCommand send with args " << address << " " << protocol << " " << payload << std::endl;
+//
+    // node->send(address, protocol, payload);
+    std::cout << "Sending" << std::endl;
 }
 
 void IPCommands::up(std::string& args) {
     int spaceIdx = args.find(' ');
     int interfaceNum = stoi(args.substr(0, spaceIdx));
 
-    if (node->enableInterface(id)) {
-        std::cout << "interface " << id << " is now enabled" << std::endl;
+    if (node->enableInterface(interfaceNum)) {
+        std::cout << "interface " << interfaceNum << " is now enabled" << std::endl;
     }
 }
 
@@ -111,8 +113,8 @@ void IPCommands::down(std::string& args) {
     int spaceIdx = args.find(' ');
     int interfaceNum = stoi(args.substr(0, spaceIdx));
 
-    if (node->disabledInterface(id)) {
-        std::cout << "interface " << id << " is now disabled" << std::endl;
+    if (node->disableInterface(interfaceNum)) {
+        std::cout << "interface " << interfaceNum << " is now disabled" << std::endl;
     }
 }
 

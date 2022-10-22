@@ -53,7 +53,7 @@ int main(int argc, char *argv[]) {
         ip::address_v4 rv_ip = ip::make_address_v4(remote_virt_ip);
         
         // Print out the local virtual ip and its ID
-        std::cout << id << ": " << lv_ip << std::endl;
+        std::cout << posId << ": " << lv_ip << std::endl;
 
         // Add interface
         node->addInterface(posId, lv_ip.to_string(), rv_ip.to_string(), remote_phys_port, 1);
@@ -69,7 +69,11 @@ int main(int argc, char *argv[]) {
     std::string text;
     std::cout << "> ";
     while (std::getline(std::cin, text)) {
-        repl.eval(text);
+        try {
+            repl.eval(text);
+        } catch (std::exception& e) {
+            std::cerr << "exception: " << e.what() << std::endl;
+        }
         std::cout << "> ";
     }
 
