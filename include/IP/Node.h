@@ -61,7 +61,7 @@ class Node {
         int calculateChecksum(std::shared_ptr<struct ip> ipHeader);
 
         // forward modifies the shared pointer
-        void forward(std::shared_ptr<ip> ipHeader, 
+        void forward(std::shared_ptr<struct ip> ipHeader, 
             const std::string& payload,
             unsigned int forwardPort);
 

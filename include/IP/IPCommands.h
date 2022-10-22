@@ -1,11 +1,13 @@
 #pragma once
 
 #include "include/repl/REPL.h"
+#include "include/IP/Node.h"
 #include <iostream>
+#include <memory>
 
 class IPCommands : public REPL {
     public:
-        IPCommands();
+        IPCommands(std::shared_ptr<Node> node);
 
         std::string interfaces(std::vector<std::string> args);
         std::string routes(std::vector<std::string> args);

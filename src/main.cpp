@@ -30,8 +30,10 @@ int main(int argc, char *argv[]) {
     // This is the port our UDP socket should bind to
     unsigned int local_phys_port = root->local_phys_port;
 
+    std::cout << "attempting to bind to port " << local_phys_port << std::endl;
+
     // Create node
-    Node node = Node(local_phys_port);
+    std::shared_ptr<Node> node = std::make_shared<Node>(local_phys_port);
 
     // Loop through each interface
     lnxbody_t *curr, *next;
@@ -53,11 +55,11 @@ int main(int argc, char *argv[]) {
         std::cout << id << ": " << lv_ip << std::endl;
 
         // Add interface
-        node.addInterface(remote_phys_port, lv_ip.to_string(), rv_ip.to_string());
+        node->addInterface(remote_phys_port, lv_ip.to_string(), rv_ip.to_string());
         id++;
     }
 
-    IPCommands repl = IPCommands();
+    IPCommands repl = IPCommands(node);
     repl.register_commands();
     
     std::string text;

@@ -4,7 +4,7 @@
 
 const int ROUTE_COL_SIZE = 15;
 
-IPCommands::IPCommands(std::shared_ptr<Node> node) node(node) {}
+IPCommands::IPCommands(std::shared_ptr<Node> node) : node(node) {}
 
 std::string IPCommands::interfaces(std::vector<std::string> args) {
 

@@ -6,9 +6,7 @@
 */
 Node::Node(unsigned int port) : 
     port(port), 
-    // my_endpoint(ip::udp::v4(), port),
-    socket(my_io_context, {ip::udp::v4(), port}),
-    // socket(my_io_context, my_endpoint)
+    socket(my_io_context, {ip::udp::v4(), port})
 {
     std::cout << "Constructing node at port " << port << std::endl;
     using namespace std::placeholders;
@@ -47,19 +45,19 @@ void Node::addInterface(
     routingTable.insert(std::make_pair(srcAddr, valSame));
 
     // 3) Set up dst -> src table
-    dstToSrc.insert(std::make_pair(dstAddr, srcAddr));
+    dstToSrc.insert(std::make_pair(destAddr, srcAddr));
 
 }
 
-std::unordered_map<std::string, std::tuple<std::string, unsigned int>> getRoutes() {
+std::unordered_map<std::string, std::tuple<std::string, unsigned int>> Node::getRoutes() {
     return routingTable;
 }
 
-int calculateChecksum(std::shared_ptr<ip> ipHeader) {
+int Node::calculateChecksum(std::shared_ptr<struct ip> ipHeader) {
     int prevChecksum = ipHeader->ip_sum;
     ipHeader->ip_sum = 0;
 
-    char *data = (char *)ipHeader;
+    char *data = (char *)ipHeader.get();
 
     // Initialize accumulator
     uint32_t acc = 0xffff;
@@ -102,32 +100,33 @@ void Node::send(
     unsigned int destPort = ARPTable[nextHop];
     
     // Build IPv4 header
-    std::shared_ptr<ip> ip_header;
+    std::shared_ptr<struct ip> ip_header;
 
-    ip_header->ip_hl     = 20;   // always 20 if no IP options
+    ip_header->ip_hl     = 20;   // always 20 if no IP options // why is there an error in compiler for this
     ip_header->ip_v      = 4;    // version is IPv4
     ip_header->ip_tos    = 0;    // n/a
-    ip_header->ip_len    = htons(ip_header->ip_hl + payload->length());
+    ip_header->ip_len    = htons(ip_header->ip_hl + payload.length());
     ip_header->ip_id     = 0;    // n/a
     ip_header->ip_off    = 0;    // n/a
     ip_header->ip_ttl    = 16;   // initial time to live
     ip_header->ip_p      = 17;   // UDP = 17
     ip_header->ip_sum    = 0;    // checksum should be zeroed out b4 calc
-    ip_header->ip_src = inet_addr(dstToSrc[nextHop]);
-    ip_header->ip_dst = inet_addr(address);
+    ip_header->ip_src = {inet_addr(dstToSrc[nextHop].c_str())};
+    ip_header->ip_dst = {inet_addr(address.c_str())};
 
     // Declare boost array that will store the new payload
-    unsigned int new_size = sizeof(ip) + payload.size();
-    boost::array<char, new_size> new_payload;
+    // #todo maybe fix size later
+    unsigned int new_size = sizeof(struct ip) + payload.size();
+    std::vector<char> new_payload(new_size);
 
     // Copy contents of old ip header and payload into new payload
-    memcpy(new_payload, ip_header.get(), sizeof(ip));
-    memcpy(new_payload + sizeof(ip), &payload, payload.size());
+    memcpy(&new_payload[0], ip_header.get(), sizeof(struct ip));
+    memcpy(&new_payload[0] + sizeof(struct ip), &payload, payload.size());
     
     // // Convert ip_header to a string
-    // char b[sizeof(ip)];
-    // std::cpy(b, ip_header, sizeof(ip));
-    // b[sizeof(ip)] = '\0'; 
+    // char b[sizeof(struct ip)];
+    // std::cpy(b, ip_header, sizeof(struct ip));
+    // b[sizeof(struct ip)] = '\0'; 
 
     // std::string iph_str(b);
     // std::string new_string = iph_str + payload;
@@ -135,25 +134,25 @@ void Node::send(
     // #TODO 
     // calculate checksum
     int checksum = 0;
-    ip_header->ip_sum = calculateChecksum(ip_header->ip_sum);
+    ip_header->ip_sum = calculateChecksum(ip_header);
 
     // #TODO send it via udp and check if this works
     socket.send_to(buffer(new_payload), {ip::udp::v4(), destPort});
     
 }
 
-void Node::forward(std::shared_ptr<ip> ipHeader, 
+void Node::forward(std::shared_ptr<struct ip> ipHeader, 
         const std::string& payload, 
         unsigned int forwardPort) {
 
     ipHeader->ip_ttl--;
     ipHeader->ip_sum = calculateChecksum(ipHeader);
 
-    unsigned int newSize = sizeof(ip) + payload.size();
-    boost::array<char, newSize> newPayload;
+    unsigned int newSize = sizeof(struct ip) + payload.size();
+    std::vector<char> newPayload(newSize);
 
-    memcpy(&newPayload[0], ipHeader.get(), sizeof(ip));
-    memcpy(&newPayload[sizeof(ip)], &payload[0], payload.size());
+    memcpy(&newPayload[0], ipHeader.get(), sizeof(struct ip));
+    memcpy(&newPayload[sizeof(struct ip)], &payload[0], payload.size());
 
     socket.send_to(buffer(newPayload), {ip::udp::v4(), forwardPort});
 }
@@ -162,7 +161,7 @@ void Node::receive() {
     while (true) {
         try {
             boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer;
-            udp::endpoint receiverEndpoint;
+            ip::udp::endpoint receiverEndpoint;
 
             size_t len = socket.receive_from(buffer(receiveBuffer), receiverEndpoint);
             genericHandler(receiveBuffer, len, receiverEndpoint);
@@ -177,20 +176,20 @@ void Node::registerHandler(int protocol, ProtocolHandler func) {
 }
 
 void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
-        size_t receivedBytes, udp::endpoint receiverEndpoint) {
+        size_t receivedBytes, ip::udp::endpoint receiverEndpoint) {
     // Need to check whether the port message was sent from appears in ARP Table
     // if (receiver_endpoint.port() != port) {
         // return;
     // }
 
-    ip *ipHeaderRaw = (ip *)(&receiveBuffer[0]);
+    struct ip *ipHeaderRaw = (struct ip *)(&receiveBuffer[0]);
 
     // Reconstruct IPv4 header
-    std::shared_ptr<ip> ipHeader = std::make_shared<ip>();
-    memcpy(ipHeader, ipHeaderRaw, sizeof(ipHeaderRaw));
+    std::shared_ptr<struct ip> ipHeader = std::make_shared<struct ip>();
+    memcpy(ipHeader.get(), ipHeaderRaw, sizeof(ipHeaderRaw));
 
     // Get payload/data from IP packet
-    std::string payload(buf.begin() + sizeof(ipHeader), buf.begin() + receivedBytes);
+    std::string payload(receiveBuffer.begin() + sizeof(ipHeader), receiveBuffer.begin() + receivedBytes);
 
     // Compute checksum
     if (calculateChecksum(ipHeader) != ipHeader->ip_sum) {
@@ -198,12 +197,12 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     }
 
     // Is the destination address in the routing table?
-    if (!routingTable.count(ipHeader->ip_dst.s_addr)) {
+    if (!routingTable.count(ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr)).to_string())) {
         return;
     }
 
     // Calculate whether packet has reached destination
-    std::string nextHop = std::get<0>(routingTable[ipHeader->ip_dst.s_addr]);
+    std::string nextHop = std::get<0>(routingTable[ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr)).to_string()]);
     unsigned int destPort = ARPTable[nextHop];
     if (destPort == port) {
         if (handlers.count(ipHeader->ip_p)) {
@@ -217,7 +216,7 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     forward(ipHeader, payload, destPort);
 }
 
-void Node::testHandler(std::shared_ptr<ip> ipHeader, std::string& data) {
+void Node::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& data) {
     auto src_ip = ip::make_address_v4(ipHeader->ip_src.s_addr);
     auto dest_ip = ip::make_address_v4(ipHeader->ip_dst.s_addr);
 
@@ -231,7 +230,7 @@ void Node::testHandler(std::shared_ptr<ip> ipHeader, std::string& data) {
     return;
 }
 
-void Node::ripHandler(std::shared_ptr<ip> ipHeader, std::string& data) {
+void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& data) {
     std::cout << "You have entered the RIP handler!" << std::endl;
     return;
 }
