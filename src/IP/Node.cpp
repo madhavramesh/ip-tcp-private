@@ -1,5 +1,11 @@
 #include "include/IP/Node.h"
+#include <vector>
+#include <chrono>
+#include <thread>
 
+
+
+// std::vector<RIPentry> entries; 
 
 /**
  * Constructor
@@ -8,7 +14,6 @@ Node::Node(unsigned int port) :
     port(port), 
     socket(my_io_context, {ip::udp::v4(), port})
 {
-    std::cout << "Constructing node at port " << port << std::endl;
     using namespace std::placeholders;
 
     auto testFunc = std::bind(&Node::testHandler, this, _1, _2);
@@ -39,8 +44,10 @@ void Node::addInterface(
     ARPTable.insert(std::make_pair(id, interface));
 
     // 2) Set up routing table
-    std::tuple<int, int> nextHop = std::make_tuple(id, cost);
-    routingTable.insert(std::make_pair(destAddr, nextHop));
+    if (destAddr != srcAddr) {
+        std::tuple<int, int> nextHop = std::make_tuple(id, cost);
+        routingTable.insert(std::make_pair(destAddr, nextHop));
+    }
 }
 
 bool Node::enableInterface(int id) {
@@ -204,7 +211,9 @@ void Node::send(
 
     // Copy contents of old ip header and payload into new payload
     memcpy(&new_payload[0], ip_header.get(), sizeof(struct ip));
-    memcpy(&new_payload[0] + sizeof(struct ip), &payload, payload.size());
+    // memcpy(&new_payload[0] + sizeof(struct ip), &payload, payload.size());
+    memcpy(&new_payload[0] + sizeof(struct ip), payload.data(), payload.size());
+
     
     // // Convert ip_header to a string
     // char b[sizeof(struct ip)];
@@ -234,6 +243,85 @@ void Node::forward(std::shared_ptr<struct ip> ipHeader,
     socket.send_to(buffer(newPayload), {ip::udp::v4(), forwardPort});
 }
 
+
+/**
+ * @brief sends rip packet RIP RIP
+ * 
+ */
+void Node::sendRIPpacket(std::string dest, u_int type, std::vector<RIPentry> entries) {
+    // create struct (the payload)
+    struct RIPpacket packet;
+    packet.command = htons(type);    
+    packet.num_entries = htons(entries.size()); 
+
+    // // ip::address_v4::from_string("255.255.255.255").to_ulong;
+    // #todo make safe pointer
+    int total_size = 4 + (packet.num_entries * sizeof(RIPentry));
+    std::string payload;
+    payload.resize(total_size);
+
+    // copy front
+    memcpy((char *)payload.data(), &packet, 4); 
+
+    // copy rest
+    int offset = packet.num_entries * sizeof(RIPentry);
+    memcpy((char *)payload.data() + offset, &entries, total_size - 4);
+
+    // send w/ 200 as protocol
+    send(dest, 200, payload);
+}
+
+
+/**
+ * @brief On start it sends a request to all interfaces. Then periodically sends
+ * updates ("responses") of the full routing table every 5 seconds while implementing
+ * split horizon + poison reverse
+ * 
+ */
+void Node::RIP() {
+    std::cout << "thread for RIP started" << std::endl;
+
+    // Send request to each interface
+    for (auto& [id, interface] : ARPTable) {
+        if (id >= 0) {
+            std::cout << "sending request to " << interface.destAddr << std::endl;
+
+            std::vector<RIPentry> entries = std::vector<RIPentry>();
+            sendRIPpacket(interface.destAddr, 1, entries); // type 1 for request
+
+            // // create struct (the payload)
+            // struct RIPpacket packet;
+            // packet.command = 1;     // request command
+            // packet.num_entries = 0; // no entries
+
+            // // // ip::address_v4::from_string("255.255.255.255").to_ulong;
+            // // there are no rip entries for the initial request
+            // // #todo make safe pointer
+            // std::vector<RIPentry> entries = std::vector<RIPentry>();
+            // packet.entries = &entries;
+
+            // std::string payload;
+            // payload.resize(32);
+            // memcpy((char *)payload.data(), &packet, 32); 
+
+            // // call send w/ 200 as protocol
+            // send(interface.destAddr, 200, payload);
+        }
+    }
+
+    // every 5 seconds, send out a response/update 
+    // implements split horizon + poison reverse
+    while (true) {
+
+        std::vector<RIPentry> entries;
+        
+        // std::cout << "I would send" << std::endl;
+
+        std::chrono::seconds dura(5);
+        std::this_thread::sleep_for(dura);
+    }
+}
+
 void Node::receive() {
     while (true) {
         try {
@@ -261,12 +349,12 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
 
     struct ip *ipHeaderRaw = (struct ip *)(&receiveBuffer[0]);
 
-    // Get payload/data from IP packet
-    std::string payload(receiveBuffer.begin() + sizeof(ipHeader), receiveBuffer.begin() + receivedBytes);
-
     // Reconstruct IPv4 header
     std::shared_ptr<struct ip> ipHeader = std::make_shared<struct ip>();
     memcpy(ipHeader.get(), ipHeaderRaw, sizeof(ipHeaderRaw));
+
+    // Get payload/data from IP packet
+    std::string payload(receiveBuffer.begin() + sizeof(ipHeader), receiveBuffer.begin() + receivedBytes);
 
     // Compute checksum
     if (ip_sum(ipHeader.get(), ipHeader->ip_len) != (ipHeader->ip_sum * 4)) {

@@ -9,9 +9,6 @@
 
 using namespace boost::asio;
 
-void receiveFunc() {
-    std::cout << "receive func" << std::endl;
-}
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -29,8 +26,6 @@ int main(int argc, char *argv[]) {
 
     // This is the port our UDP socket should bind to
     unsigned int local_phys_port = root->local_phys_port;
-
-    std::cout << "attempting to bind to port " << local_phys_port << std::endl;
 
     // Create node
     std::shared_ptr<Node> node = std::make_shared<Node>(local_phys_port);
@@ -63,10 +58,21 @@ int main(int argc, char *argv[]) {
         negId--;
     }
 
+    // ------------------------------------------------------------------------- 
+    // Start RIP thread
+
+    auto ripFunc = std::bind(&Node::RIP, node);
+    std::thread(ripFunc).detach();
+
+    // -------------------------------------------------------------------------
+
     // Start listening thread on node
     auto receiveFunc = std::bind(&Node::receive, node);
     std::thread(receiveFunc).detach();
 
+    // ------------------------------------------------------------------------- 
+
+    // Set up REPL
     IPCommands repl = IPCommands(node);
     repl.register_commands();
     
@@ -80,6 +86,8 @@ int main(int argc, char *argv[]) {
         }
         std::cout << "> ";
     }
+
+    // ------------------------------------------------------------------------- 
 
     // Clean up
     free_links(root);
