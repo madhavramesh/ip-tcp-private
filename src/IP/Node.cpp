@@ -1,4 +1,5 @@
 #include "include/IP/Node.h"
+#include "include/repl/colors.h"
 
 
 /**
@@ -45,10 +46,10 @@ void Node::addInterface(
 
 bool Node::enableInterface(int id) {
     if (!ARPTable.count(id)) {
-        std::cerr << "interface " << id << " does not exist" << std::endl;
+        std::cerr << red << "interface " << id << " does not exist" << reset << std::endl;
         return false;
     } else if (ARPTable[id].up) {
-        std::cerr << "interface " << id << " is already up" << std::endl;
+        std::cerr << red << "interface " << id << " is already up" << reset << std::endl;
         return false;
     }
 
@@ -58,10 +59,10 @@ bool Node::enableInterface(int id) {
 
 bool Node::disableInterface(int id) {
     if (!ARPTable.count(id)) {
-        std::cerr << "interface " << id << " does not exist" << std::endl;
+        std::cerr << red << "interface " << id << " does not exist" << reset << std::endl;
         return false;
     } else if (!ARPTable[id].up) {
-        std::cerr << "interface " << id << " is already down" << std::endl;
+        std::cerr << red << "interface " << id << " is already down" << reset << std::endl;
         return false;
     }
 
@@ -165,15 +166,14 @@ void Node::send(
     int protocol, 
     const std::string& payload) 
 {   
-    std::cout << "calling send in node" << std::endl;
-
     // #todo handle cases where address or next hop not in arp table
     // specifically, routing table case
     auto [nextHop, cost] = routingTable[address];
 
     // Check if interface has been disabled
     if (!ARPTable[nextHop].up) {
-        std::cerr << "Cannot send to " << address << ", it is an unreachable address." << std::endl;
+        std::cerr << red << "Cannot send to " << address 
+            << ", it is an unreachable address." << reset << std::endl;
         return;
     }
 
@@ -204,7 +204,7 @@ void Node::send(
 
     // Copy contents of old ip header and payload into new payload
     memcpy(&new_payload[0], ip_header.get(), sizeof(struct ip));
-    memcpy(&new_payload[0] + sizeof(struct ip), &payload, payload.size());
+    memcpy(&new_payload[0] + sizeof(struct ip), &payload[0], payload.size());
     
     // // Convert ip_header to a string
     // char b[sizeof(struct ip)];
@@ -243,7 +243,7 @@ void Node::receive() {
             size_t len = socket.receive_from(buffer(receiveBuffer), receiverEndpoint);
             genericHandler(receiveBuffer, len, receiverEndpoint);
         } catch (std::exception& e) {
-            std::cerr << "Error: receiving packet: " << e.what() << std::endl;
+            std::cerr << red << "Error: receiving packet: " << e.what() << reset << std::endl;
         }
     }
 }
@@ -263,13 +263,13 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
 
     // Reconstruct IPv4 header
     std::shared_ptr<struct ip> ipHeader = std::make_shared<struct ip>();
-    memcpy(ipHeader.get(), ipHeaderRaw, sizeof(ipHeaderRaw));
+    memcpy(ipHeader.get(), ipHeaderRaw, sizeof(struct ip));
 
     // Get payload/data from IP packet
-    std::string payload(receiveBuffer.begin() + sizeof(ipHeader), receiveBuffer.begin() + receivedBytes);
+    std::string payload(receiveBuffer.begin() + sizeof(struct ip), receiveBuffer.begin() + receivedBytes);
 
     // Compute checksum
-    if (ip_sum(ipHeader.get(), ipHeader->ip_len) != (ipHeader->ip_sum * 4)) {
+    if (ip_sum(ipHeader.get(), ipHeader->ip_len) == ipHeader->ip_sum) {
         return;
     }
 
@@ -290,6 +290,7 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     if (destPort == port) {
         if (handlers.count(ipHeader->ip_p)) {
             handlers.find(ipHeader->ip_p)->second(ipHeader, payload);
+            return;
         }
         throw std::runtime_error("Error: handler for protocol " + 
                 std::to_string(ipHeader->ip_p) + " not found");
@@ -300,16 +301,18 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
 }
 
 void Node::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& data) {
-    auto src_ip = ip::make_address_v4(ipHeader->ip_src.s_addr);
-    auto dest_ip = ip::make_address_v4(ipHeader->ip_dst.s_addr);
+    auto src_ip = ip::make_address_v4(ntohl(ipHeader->ip_src.s_addr));
+    auto dest_ip = ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr));
 
+    std::cout << "\r" << std::flush;
     std::cout << "---Node received packet!---" << std::endl;
-    std::cout << "\t\tsource IP      : " << src_ip << std::endl;
-    std::cout << "\t\tdestination IP : " << dest_ip << std::endl;
-    std::cout << "\t\tprotocol       : " << ipHeader->ip_p << std::endl;
-    std::cout << "\t\tpayload length : " << data.size() << std::endl;
-    std::cout << "\t\tpayload        : " << data << std::endl;
+    std::cout << "\tsource IP      : " << src_ip << std::endl;
+    std::cout << "\tdestination IP : " << dest_ip << std::endl;
+    std::cout << "\tprotocol       : " << ipHeader->ip_p << std::endl;
+    std::cout << "\tpayload length : " << data.size() << std::endl;
+    std::cout << "\tpayload        : " << data << std::endl;
     std::cout << "---------------------------" << std::endl;
+    std::cout << ">";
     return;
 }
 

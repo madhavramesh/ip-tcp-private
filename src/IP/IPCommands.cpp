@@ -1,9 +1,10 @@
-#include "../../include/IP/IPCommands.h"
-
 #include <string>
 #include <vector>
 #include <fstream>
 #include <iomanip>
+
+#include "include/IP/IPCommands.h"
+#include "include/repl/colors.h"
 
 const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;
@@ -90,18 +91,47 @@ void IPCommands::routes(std::string& args) {
 }
 
 void IPCommands::send(std::string& args) {
-    // if (args.size() != )
-    // std::string address = args[1];
-    // int protocol = std::stoi(args[2]);
-    // std::string payload = args[3];
-    // std::cout << "calling IPCommand send with args " << address << " " << protocol << " " << payload << std::endl;
+    std::vector<std::string> parsedArgs;
+    int prevSpaceIdx = -1;
+    int spaceIdx = -1;
+    for (int i = 0; i < 3; i++) {
+        prevSpaceIdx = spaceIdx + 1;
+        spaceIdx = args.find(' ', prevSpaceIdx);
 
-    // node->send(address, protocol, payload);
-    std::cout << "Sending" << std::endl;
+        if (prevSpaceIdx == std::string::npos) {
+            std::cerr << red << "usage: " << "send " << sendParams << reset << std::endl;
+            return;
+        }
+        parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
+    }
+    std::string addr = parsedArgs[0];
+
+    // Check that protocol is a number
+    for (char c : parsedArgs[1]) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "send " << sendParams << reset << std::endl;
+            return;
+        }
+    }
+    int protocol = stoi(parsedArgs[1]);
+
+    // Just return if protocol is anything other than 0 (TestProtocol)
+    if (protocol != 0) {
+        return;
+    }
+
+    std::string payload = parsedArgs[2];
+    node->send(addr, protocol, payload);
 }
 
 void IPCommands::up(std::string& args) {
     int spaceIdx = args.find(' ');
+    std::string interfaceStr = args.substr(0, spaceIdx);
+    for (char c : interfaceStr) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "up "<< upParams << reset << std::endl;
+        }
+    }
     int interfaceNum = stoi(args.substr(0, spaceIdx));
 
     if (node->enableInterface(interfaceNum)) {
@@ -111,6 +141,12 @@ void IPCommands::up(std::string& args) {
 
 void IPCommands::down(std::string& args) {
     int spaceIdx = args.find(' ');
+    std::string interfaceStr = args.substr(0, spaceIdx);
+    for (char c : interfaceStr) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "down " << downParams << reset << std::endl;
+        }
+    }
     int interfaceNum = stoi(args.substr(0, spaceIdx));
 
     if (node->disableInterface(interfaceNum)) {

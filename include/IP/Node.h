@@ -53,6 +53,9 @@ class Node {
             int protocol, 
             const std::string& payload);
 
+        // Loops infinitely while receiving packets
+        void receive();
+
         // Registers a handler for a new protocol (can be user provided)
         void registerHandler(int protocol, ProtocolHandler func);
 
@@ -79,9 +82,6 @@ class Node {
         void forward(std::shared_ptr<struct ip> ipHeader, 
             const std::string& payload,
             unsigned int forwardPort);
-
-        // Loops infinitely while receiving packets
-        void receive();
 
         // Handlers for printing to stdout/files and implementing RIP 
         void genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
