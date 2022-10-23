@@ -1,18 +1,22 @@
-#include "include/IP/IPCommands.h"
-#include "utils/parselinks.h"
-#include "include/IP/Node.h"
-
 #include <arpa/inet.h>
-#include <iostream>
 
+#include <iostream>
 #include <boost/asio.hpp>
 
-using namespace boost::asio;
+#include "utils/parselinks.h"
 
+<<<<<<< HEAD
+#include "include/IP/IPCommands.h"
+#include "include/IP/Node.h"
+#include "include/repl/colors.h"
+
+using namespace boost::asio;
+=======
+>>>>>>> e90bc37752d194afc9fda0ad3fe7e1c2ea7cbe51
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        std::cerr << "usage: ./node <linksfile>" << std::endl;
+        std::cerr << red << "usage: ./node <linksfile>" << reset << std::endl;
         return -1;
     }
 
@@ -76,19 +80,26 @@ int main(int argc, char *argv[]) {
     IPCommands repl = IPCommands(node);
     repl.register_commands();
     
+    // Start listening thread on node
+    auto receiveFunc = std::bind(&Node::receive, node);
+    std::thread(receiveFunc).detach();
+
     std::string text;
     std::cout << "> ";
     while (std::getline(std::cin, text)) {
         try {
             repl.eval(text);
         } catch (std::exception& e) {
-            std::cerr << "exception: " << e.what() << std::endl;
+            std::cerr << red << "exception: " << e.what() << reset << std::endl;
         }
         std::cout << "> ";
     }
 
+<<<<<<< HEAD
+=======
     // ------------------------------------------------------------------------- 
 
+>>>>>>> e90bc37752d194afc9fda0ad3fe7e1c2ea7cbe51
     // Clean up
     free_links(root);
 }

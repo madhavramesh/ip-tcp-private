@@ -65,6 +65,9 @@ class Node {
             int protocol, 
             const std::string& payload);
 
+        // Loops infinitely while receiving packets
+        void receive();
+
         // Registers a handler for a new protocol (can be user provided)
         void registerHandler(int protocol, ProtocolHandler func);
 
