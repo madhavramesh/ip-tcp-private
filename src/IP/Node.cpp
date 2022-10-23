@@ -179,14 +179,6 @@ void Node::send(
     // Copy contents of old ip header and payload into new payload
     memcpy(&new_payload[0], ip_header.get(), sizeof(struct ip));
     memcpy(&new_payload[0] + sizeof(struct ip), &payload[0], payload.size());
-    
-    // // Convert ip_header to a string
-    // char b[sizeof(struct ip)];
-    // std::cpy(b, ip_header, sizeof(struct ip));
-    // b[sizeof(struct ip)] = '\0'; 
-
-    // std::string iph_str(b);
-    // std::string new_string = iph_str + payload;
 
     // #TODO send it via udp and check if this works
     socket.send_to(buffer(new_payload), {ip::udp::v4(), destPort});
@@ -213,25 +205,29 @@ void Node::forward(std::shared_ptr<struct ip> ipHeader,
  * @brief sends rip packet RIP RIP
  * 
  */
-void Node::sendRIPpacket(std::string dest, unsigned int type, std::vector<RIPentry> entries) {
-    // Run SHPR
-    std::vector<RIPentry> updates = SHPR(dest, entries);
+void Node::sendRIPpacket(std::string dest, struct RIPpacket packet) {
+    packet.entries = SHPR(dest, packet.entries);
 
-    // create struct (the payload)
-    struct RIPpacket packet;
-    packet.command = htons(type);    
-    packet.num_entries = htons(updates.size()); 
+    packet.command = htons(packet.command);
+    packet.num_entries = htons(packet.num_entries);
+    for (auto &entry : packet.entries) {
+        packet.entry.cost = htonl(packet.entry.cost);
+        packet.entry.address = htonl(packet.entry.address);
+        packet.entry.mask = htonl(packet.entry.mask);
+    }
 
+    // // ip::address_v4::from_string("255.255.255.255").to_ulong;
     // #todo make safe pointer
-    int total_size = 4 + (packet.num_entries * sizeof(RIPentry));
-    std::string payload;
-    payload.resize(total_size);
+    int front_size = sizeof(packet.command) + sizeof(packet.num_entries);
+    int total_size = front_size + (packet.entries.size() * sizeof(RIPentry));
+    std::string payload(total_size);
 
     // copy front
-    memcpy((char *)payload.data(), &packet, 4); 
+    memcpy((char *)payload.data(), &packet.command, sizeof(packet.command)); 
+    memcpy((char *)payload.data() + sizeof(packet.command), &packet.num_entries, sizeof(packet.num_entries)); 
 
     // copy rest
-    memcpy((char *)payload.data() + 4, &updates[0], total_size - 4);
+    memcpy((char *)payload.data() + front_size, &entries[0], total_size - front_size);
 
     // send w/ 200 as protocol
     send(dest, 200, payload);
@@ -287,18 +283,20 @@ std::vector<RIPentry> Node::SHPR(std::string packetDest, std::vector<RIPentry> u
  * @param routes 
  * @return std::vector<RIPentry> 
  */
-std::vector<RIPentry> Node::createRIPentries(std::unordered_map<std::string, std::tuple<int, int>> routes) {
-    std::vector<RIPentry> ripEntries;
+RIPpacket Node::createRIPpacket(uint16_t type, 
+        std::unordered_map<std::string, std::tuple<int, int>> routes) {
+    struct RIPpacket packet;
+    packet.command = type;
 
     u_int32_t mask = ip::address_v4::from_string("255.255.255.255").to_ulong();
-
     for (auto [dest, tup] : routes) {
         u_int32_t destInt = ip::address_v4::from_string(dest).to_ulong();
-        RIPentry entry = {htonl(std::get<1>(tup)), htonl(destInt), mask};
-        ripEntries.push_back(entry);
-    }
 
-    return ripEntries;
+        RIPentry entry = {std::get<1>(tup), destInt, mask};
+        packet.entries.push_back(entry);
+    }
+    packet.num_entries = packet.entries.size();
+    return packet;
 }
 
 
@@ -306,31 +304,33 @@ std::vector<RIPentry> Node::createRIPentries(std::unordered_map<std::string, std
  * @brief On start it sends a request to all interfaces. Then periodically sends
  * updates ("responses") of the full routing table every 5 seconds while implementing
  * split horizon + poison reverse
- * 
+ *
  */
 void Node::RIP() {
     std::cout << "thread for RIP started" << std::endl;
 
     // Send request to each interface
-    for (auto& [id, interface] : ARPTable) {
-        if (id >= 0) {
-            std::cout << "sending request to " << interface.destAddr << std::endl;
+    std::vector<Interface> interfaces = getInterfaces();
+    for (auto& interface : interfaces) {
+        struct RIPpacket packet;
+        packet.command = 1;
+        packet.num_entries = 0;
+        packet.entries = {};
 
-            std::vector<RIPentry> entries = std::vector<RIPentry>();
-            sendRIPpacket(interface.destAddr, 1, entries); // type 1 for request
-        }
+        std::cout << "sending request to " << interface.destAddr << std::endl;
+        sendRIPpacket(interface.destAddr, packet); // type 1 for request
     }
 
     // every 5 seconds, send out a response/update 
     // implements split horizon + poison reverse
     while (true) {
         std::vector<Interface> interfaces = getInterfaces();
-        std::vector<RIPentry> updates = createRIPentries(routingTable);
+        std::vector<RIPentry> updates = createRIPpacket(2, routingTable);
         // #todo lock interfaces
         for (Interface interface : interfaces) {
-            sendRIPpacket(interface.destAddr, 2, updates);
+            sendRIPpacket(interface.destAddr, packet);
         }
-        
+
         std::chrono::seconds dura(5);
         std::this_thread::sleep_for(dura);
     }
