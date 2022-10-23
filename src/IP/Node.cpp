@@ -273,6 +273,54 @@ void Node::sendRIPpacket(std::string dest, u_int type, std::vector<RIPentry> ent
 
 
 /**
+ * @brief Implements split horizon with poison reverse.
+ * Uses routing table to see if next hop matches with destination.
+ * If yes, then cost should be set to infinity/16. 
+ * 
+ * @param dest 
+ * @param updates 
+ * @return std::vector<RIPentry> 
+ */
+std::vector<RIPentry> Node::SHPR(std::string packetDest, std::vector<RIPentry> updates) {
+    std::vector<RIPentry> results;
+
+    // Loop through updates and check if next hop for each RIP entry destination
+    // is the dest of this RIP message. If yes, set cost to infinity/16.
+    for (RIPentry entry : updates) {
+        // #TODO think about error handling when entry doesn't exist?
+        // Convert u_int_32_t to std::string
+        std::string entryDest = ip::make_address_v4(entry.address).to_string();
+        int entryDestID = std::get<0>(routingTable[entryDest]);
+
+        // Find next hop *if* it exists and is not down
+        Interface nextHop = ARPTable[entryDestID];
+
+    }
+}
+
+
+/**
+ * @brief Creates vector of RIP entries from corresponding routing table entries.
+ * 
+ * @param routes 
+ * @return std::vector<RIPentry> 
+ */
+std::vector<RIPentry> Node::createRIPentries(std::unordered_map<std::string, std::tuple<int, int>> routes) {
+    std::vector<RIPentry> ripEntries;
+
+    u_int32_t mask = ip::address_v4::from_string("255.255.255.255").to_ulong;
+
+    for (auto [dest, tup] : routes) {
+        u_int32_t destInt = ip::address_v4::from_string(dest).to_ulong
+        RIPentry entry = {std::get<1>(tup), destInt, mask};
+        ripEntries.push_back(entry);
+    }
+
+    return ripEntries;
+}
+
+
+/**
  * @brief On start it sends a request to all interfaces. Then periodically sends
  * updates ("responses") of the full routing table every 5 seconds while implementing
  * split horizon + poison reverse
@@ -288,24 +336,6 @@ void Node::RIP() {
 
             std::vector<RIPentry> entries = std::vector<RIPentry>();
             sendRIPpacket(interface.destAddr, 1, entries); // type 1 for request
-
-            // // create struct (the payload)
-            // struct RIPpacket packet;
-            // packet.command = 1;     // request command
-            // packet.num_entries = 0; // no entries
-
-            // // // ip::address_v4::from_string("255.255.255.255").to_ulong;
-            // // there are no rip entries for the initial request
-            // // #todo make safe pointer
-            // std::vector<RIPentry> entries = std::vector<RIPentry>();
-            // packet.entries = &entries;
-
-            // std::string payload;
-            // payload.resize(32);
-            // memcpy((char *)payload.data(), &packet, 32); 
-
-            // // call send w/ 200 as protocol
-            // send(interface.destAddr, 200, payload);
         }
     }
 
@@ -313,7 +343,7 @@ void Node::RIP() {
     // implements split horizon + poison reverse
     while (true) {
 
-        std::vector<RIPentry> entries;
+        std::vector<RIPentry> updates;
         
         // std::cout << "I would send" << std::endl;
 
