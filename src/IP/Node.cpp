@@ -211,23 +211,24 @@ void Node::sendRIPpacket(std::string dest, struct RIPpacket packet) {
     packet.command = htons(packet.command);
     packet.num_entries = htons(packet.num_entries);
     for (auto &entry : packet.entries) {
-        packet.entry.cost = htonl(packet.entry.cost);
-        packet.entry.address = htonl(packet.entry.address);
-        packet.entry.mask = htonl(packet.entry.mask);
+        entry.cost = htonl(entry.cost);
+        entry.address = htonl(entry.address);
+        entry.mask = htonl(entry.mask);
     }
 
     // // ip::address_v4::from_string("255.255.255.255").to_ulong;
     // #todo make safe pointer
     int front_size = sizeof(packet.command) + sizeof(packet.num_entries);
     int total_size = front_size + (packet.entries.size() * sizeof(RIPentry));
-    std::string payload(total_size);
+    std::string payload;
+    payload.resize(total_size);
 
     // copy front
     memcpy((char *)payload.data(), &packet.command, sizeof(packet.command)); 
     memcpy((char *)payload.data() + sizeof(packet.command), &packet.num_entries, sizeof(packet.num_entries)); 
 
     // copy rest
-    memcpy((char *)payload.data() + front_size, &entries[0], total_size - front_size);
+    memcpy((char *)payload.data() + front_size, &packet.entries[0], total_size - front_size);
 
     // send w/ 200 as protocol
     send(dest, 200, payload);
@@ -266,7 +267,7 @@ std::vector<RIPentry> Node::SHPR(std::string packetDest, std::vector<RIPentry> u
             continue;
         }
 
-        if (nextHop.destAddr == entryDest) {
+        if (nextHop.destAddr == packetDest) {
             newEntry.cost = 16;
         } else {
             newEntry.cost = entry.cost;
@@ -325,7 +326,7 @@ void Node::RIP() {
     // implements split horizon + poison reverse
     while (true) {
         std::vector<Interface> interfaces = getInterfaces();
-        std::vector<RIPentry> updates = createRIPpacket(2, routingTable);
+        RIPpacket packet = createRIPpacket(2, routingTable);
         // #todo lock interfaces
         for (Interface interface : interfaces) {
             sendRIPpacket(interface.destAddr, packet);

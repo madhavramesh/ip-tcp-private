@@ -33,7 +33,7 @@ struct RIPpacket {
     u_int16_t command;
     u_int16_t num_entries;
     std::vector<RIPentry> entries;
-}
+};
 
 class Node {
 
@@ -112,5 +112,5 @@ class Node {
         std::vector<RIPentry> SHPR(std::string packetDest, std::vector<RIPentry> updates);
 
         // Given a subset of the routing table, generates a RIP entry for element.
-        std::vector<RIPentry> createRIPentries(std::unordered_map<std::string, std::tuple<int, int>> routes);
+        RIPpacket createRIPpacket(uint16_t type, std::unordered_map<std::string, std::tuple<int, int>> routes);
 };
