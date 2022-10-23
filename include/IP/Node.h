@@ -23,6 +23,18 @@ struct Interface {
     unsigned int destPort;
 };
 
+struct RIPentry{
+    u_int32_t cost;
+    u_int32_t address;
+    u_int32_t mask;
+} __attribute__((__packed__));
+
+struct RIPpacket {
+    u_int16_t command;
+    u_int16_t num_entries;
+    std::vector<RIPentry> *entries;
+} __attribute__((__packed__));
+
 class Node {
 
     public:
@@ -59,6 +71,12 @@ class Node {
         // Registers a handler for a new protocol (can be user provided)
         void registerHandler(int protocol, ProtocolHandler func);
 
+        // Loops infinitely while receiving packets
+        void receive();
+
+        // Loops infinitely sending RIP updates every 5 seconds
+        void RIP();
+
     private:
         // Port that the socket will bind to
         unsigned int port;
@@ -88,4 +106,5 @@ class Node {
                 size_t receivedBytes, boost::asio::ip::udp::endpoint receiverEndpoint);
         void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
+        void sendRIPpacket(std::string dest, u_int type, std::vector<RIPentry> entries);
 };
