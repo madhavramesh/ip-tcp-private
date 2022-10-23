@@ -101,8 +101,8 @@ class Node {
         // Handlers for printing to stdout/files and implementing RIP 
         void genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
                 size_t receivedBytes, boost::asio::ip::udp::endpoint receiverEndpoint);
-        void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
-        void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
+        void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
+        void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 
         void sendRIPpacket(std::string dest, struct RIPpacket);
 
