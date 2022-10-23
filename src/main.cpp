@@ -5,14 +5,11 @@
 
 #include "utils/parselinks.h"
 
-<<<<<<< HEAD
 #include "include/IP/IPCommands.h"
 #include "include/IP/Node.h"
 #include "include/repl/colors.h"
 
 using namespace boost::asio;
-=======
->>>>>>> e90bc37752d194afc9fda0ad3fe7e1c2ea7cbe51
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -95,11 +92,8 @@ int main(int argc, char *argv[]) {
         std::cout << "> ";
     }
 
-<<<<<<< HEAD
-=======
     // ------------------------------------------------------------------------- 
 
->>>>>>> e90bc37752d194afc9fda0ad3fe7e1c2ea7cbe51
     // Clean up
     free_links(root);
 }
