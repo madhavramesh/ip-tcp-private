@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <tuple>
+#include <mutex>
 
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
@@ -81,6 +82,7 @@ class Node {
         std::unordered_map<std::string, std::tuple<unsigned int, int>> ARPTable;
         // Routing Table: destination address -> (next hop address, cost)
         std::unordered_map<std::string, std::tuple<std::string, int>> routingTable;
+        std::mutex routingTableMtx;
 
         uint16_t ip_sum(void *buffer, int len);
 
