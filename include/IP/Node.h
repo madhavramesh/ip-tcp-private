@@ -32,7 +32,7 @@ struct RIPentry{
 struct RIPpacket {
     u_int16_t command;
     u_int16_t num_entries;
-    std::vector<RIPentry> *entries;
+    std::vector<RIPentry> *entries; // might not need
 } __attribute__((__packed__));
 
 class Node {
@@ -103,7 +103,7 @@ class Node {
                 size_t receivedBytes, boost::asio::ip::udp::endpoint receiverEndpoint);
         void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
-        void sendRIPpacket(std::string dest, u_int type, std::vector<RIPentry> entries);
+        void sendRIPpacket(std::string dest, unsigned int type, std::vector<RIPentry> entries);
 
         // Implements split horizon with poison reverse
         // Takes in destination and vector of RIP entries
