@@ -104,12 +104,12 @@ class Node {
         void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 
-        void sendRIPpacket(std::string dest, struct RIPpacket);
+        void sendRIPpacket(std::string dest, struct RIPpacket packet);
 
         // Implements split horizon with poison reverse
         // Takes in destination and vector of RIP entries
         // Returns a vector of RIP entries that should be sent
-        std::vector<RIPentry> SHPR(std::string packetDest, std::vector<RIPentry> updates);
+        struct RIPpacket SHPR(std::string packetDest, struct RIPpacket packet);
 
         // Given a subset of the routing table, generates a RIP entry for element.
         RIPpacket createRIPpacket(uint16_t type, std::unordered_map<std::string, std::tuple<int, int>> routes);

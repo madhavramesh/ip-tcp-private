@@ -299,8 +299,6 @@ RIPpacket Node::createRIPpacket(uint16_t type,
  *
  */
 void Node::RIP() {
-    std::cout << "thread for RIP started" << std::endl;
-
     // Send request to each interface
     std::vector<Interface> interfaces = getInterfaces();
     for (auto& interface : interfaces) {
@@ -309,7 +307,6 @@ void Node::RIP() {
         packet.num_entries = 0;
         packet.entries = {};
 
-        std::cout << "sending request to " << interface.destAddr << std::endl;
         sendRIPpacket(interface.destAddr, packet); // type 1 for request
     }
 
@@ -407,8 +404,8 @@ void Node::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload
     std::cout << "\tsource IP      : " << src_ip << std::endl;
     std::cout << "\tdestination IP : " << dest_ip << std::endl;
     std::cout << "\tprotocol       : " << ipHeader->ip_p << std::endl;
-    std::cout << "\tpayload length : " << data.size() << std::endl;
-    std::cout << "\tpayload        : " << data << std::endl;
+    std::cout << "\tpayload length : " << payload.size() << std::endl;
+    std::cout << "\tpayload        : " << payload << std::endl;
     std::cout << "---------------------------" << std::endl;
     std::cout << ">";
 }
@@ -429,23 +426,23 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
     int total_size = front_size + receivedPacket.num_entries;
     memcpy(&receivedPacket.entries[0], (char *)payload.data() + front_size, total_size - front_size);
 
-    for (auto &entry : receivedPacket.entries) {
-        entry.cost = htonl(entry.cost);
-        entry.address = htonl(entry.address);
-        entry.mask = htonl(entry.mask);
+    for (auto& entry : receivedPacket.entries) {
+        entry.cost = ntohl(entry.cost);
+        entry.address = ntohl(entry.address);
+        entry.mask = ntohl(entry.mask);
     }
 
     struct RIPpacket sendPacket;
-    if (command == 1) {
+    if (receivedPacket.command == 1) {
         // Deal with RIP request
         // RIP packet when responding to RIP request contains all routing table entries
         sendPacket = createRIPpacket(2, routingTable);
-    } else if (command == 2) {
+    } else if (receivedPacket.command == 2) {
         // Deal with RIP response
         std::unordered_map<std::string, std::tuple<int, int>> updatedRoutes;
 
-        for (auto &entry : receivedPacket.entries) {
-            std::string destAddr = entry.address;
+        for (auto& entry : receivedPacket.entries) {
+            std::string destAddr = ip::make_address_v4(entry.address).to_string();
 
             auto [nextHopId, cost] = routingTable[destAddr];
             Interface interface = ARPTable[nextHopId];
@@ -453,13 +450,14 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
             std::string RIPSrcAddr = ip::make_address_v4(ntohl(ipHeader->ip_src.s_addr)).to_string();
 
             // Update routing table if new cost < orig cost
-            if (entry.cost < cost) {
-                routingTable[destAddr] = make_tuple(nextHopId, entry.cost);
+            int newCost = entry.cost;
+            if (newCost < cost) {
+                routingTable[destAddr] = std::make_tuple(nextHopId, newCost);
                 updatedRoutes[destAddr] = routingTable[destAddr];
             } 
             // Update routing table if new cost > orig cost and came from the next hop node
-            else if (entry.cost > cost && interface.destAddr == RIPSrcAddr) {
-                routingTable[destAddr] = make_tuple(nextHopId, entry.cost);
+            else if (newCost > cost && interface.destAddr == RIPSrcAddr) {
+                routingTable[destAddr] = std::make_tuple(nextHopId, newCost);
                 updatedRoutes[destAddr] = routingTable[destAddr];
             }
         }
