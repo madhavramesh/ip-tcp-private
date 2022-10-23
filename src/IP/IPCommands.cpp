@@ -40,14 +40,14 @@ void IPCommands::interfaces(std::string& args) {
     interfaceString << std::endl;
 
     auto interfaces = node->getInterfaces();
-    for (auto& interface : interfaces) {
+    for (auto& [interface, destAddr, destPort] : interfaces) {
         std::string upStr = interface.up ? "up" : "down";
 
         interfaceString << std::setw(INTERFACE_COL_SIZE) << interface.id << " ";
         interfaceString << std::setw(INTERFACE_COL_SIZE) << upStr << " ";
         interfaceString << std::setw(INTERFACE_COL_SIZE) << interface.srcAddr << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << interface.destAddr << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << interface.destPort << std::endl;
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << destAddr << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << destPort << std::endl;
     }
 
     int spaceIdx = args.find(' ');
@@ -125,15 +125,17 @@ void IPCommands::send(std::string& args) {
 }
 
 void IPCommands::up(std::string& args) {
-    int spaceIdx = args.find(' ');
-    if (spaceIdx == std::string::npos) {
-        std::cerr << red << "usage: " << "up "<< upParams << reset << std::endl;
+    if (args.empty()) {
+        std::cerr << red << "usage: " << "down " << downParams << reset << std::endl;
+        return;
     }
 
+    int spaceIdx = args.find(' ');
     std::string interfaceStr = args.substr(0, spaceIdx);
     for (char c : interfaceStr) {
         if (!isdigit(c)) {
             std::cerr << red << "usage: " << "up "<< upParams << reset << std::endl;
+            return;
         }
     }
     int interfaceNum = stoi(args.substr(0, spaceIdx));
@@ -144,15 +146,17 @@ void IPCommands::up(std::string& args) {
 }
 
 void IPCommands::down(std::string& args) {
-    int spaceIdx = args.find(' ');
-    if (spaceIdx == std::string::npos) {
-        std::cerr << red << "usage: " << "down "<< downParams << reset << std::endl;
+    if (args.empty()) {
+        std::cerr << red << "usage: " << "down " << downParams << reset << std::endl;
+        return;
     }
 
+    int spaceIdx = args.find(' ');
     std::string interfaceStr = args.substr(0, spaceIdx);
     for (char c : interfaceStr) {
         if (!isdigit(c)) {
             std::cerr << red << "usage: " << "down " << downParams << reset << std::endl;
+            return;
         }
     }
     int interfaceNum = stoi(args.substr(0, spaceIdx));

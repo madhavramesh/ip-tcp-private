@@ -33,9 +33,7 @@ int main(int argc, char *argv[]) {
 
     // Loop through each interface
     lnxbody_t *curr, *next;
-    int posId = 0;
-    int negId = -1;
-
+    int id = 0;
     for (curr = root->body; curr != NULL; curr = next) {
         next = curr->next;
 
@@ -49,14 +47,11 @@ int main(int argc, char *argv[]) {
         ip::address_v4 rv_ip = ip::make_address_v4(remote_virt_ip);
         
         // Print out the local virtual ip and its ID
-        std::cout << posId << ": " << lv_ip << std::endl;
+        std::cout << id << ": " << lv_ip << std::endl;
 
         // Add interface
-        node->addInterface(posId, lv_ip.to_string(), rv_ip.to_string(), remote_phys_port, 1);
-        node->addInterface(negId, lv_ip.to_string(), lv_ip.to_string(), local_phys_port, 0);
-
-        posId++;
-        negId--;
+        node->addInterface(id, lv_ip.to_string(), rv_ip.to_string(), remote_phys_port);
+        id++;
     }
 
     // ------------------------------------------------------------------------- 
@@ -76,7 +71,7 @@ int main(int argc, char *argv[]) {
     // Set up REPL
     IPCommands repl = IPCommands(node);
     repl.register_commands();
-    
+
     std::string text;
     std::cout << "> ";
     while (std::getline(std::cin, text)) {
