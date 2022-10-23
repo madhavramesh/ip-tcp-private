@@ -126,6 +126,10 @@ void IPCommands::send(std::string& args) {
 
 void IPCommands::up(std::string& args) {
     int spaceIdx = args.find(' ');
+    if (spaceIdx == std::string::npos) {
+        std::cerr << red << "usage: " << "up "<< upParams << reset << std::endl;
+    }
+
     std::string interfaceStr = args.substr(0, spaceIdx);
     for (char c : interfaceStr) {
         if (!isdigit(c)) {
@@ -141,6 +145,10 @@ void IPCommands::up(std::string& args) {
 
 void IPCommands::down(std::string& args) {
     int spaceIdx = args.find(' ');
+    if (spaceIdx == std::string::npos) {
+        std::cerr << red << "usage: " << "down "<< downParams << reset << std::endl;
+    }
+
     std::string interfaceStr = args.substr(0, spaceIdx);
     for (char c : interfaceStr) {
         if (!isdigit(c)) {

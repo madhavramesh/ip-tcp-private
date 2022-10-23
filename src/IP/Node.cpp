@@ -93,6 +93,7 @@ std::vector<std::tuple<std::string, std::string, int>> Node::getRoutes() {
 
         Interface& interface = ARPTable[id];
         if (interface.up) {
+            std::cout << interface.id << " " << interface.up << std::endl;
             auto route = std::make_tuple(destAddr, interface.destAddr, cost);
             routes.push_back(route);
         }
