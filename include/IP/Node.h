@@ -106,7 +106,7 @@ class Node {
         void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 
-        void sendRIPpacket(Interface interface, struct RIPpacket);
+        void sendRIPpacket(Interface interface, struct RIPpacket packet);
 
         // Implements split horizon with poison reverse
         // Takes in destination and vector of RIP entries

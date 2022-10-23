@@ -230,7 +230,7 @@ void Node::forward(std::shared_ptr<struct ip> ipHeader,
  * 
  */
 void Node::sendRIPpacket(Interface interface, struct RIPpacket packet) {
-    packet.entries = SHPR(interface.destAddr, packet.entries);
+    packet = SHPR(interface.destAddr, packet);
 
     packet.command = htons(packet.command);
     packet.num_entries = htons(packet.num_entries);
@@ -490,6 +490,6 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
 
     std::vector<Interface> interfaces = getInterfaces();
     for (Interface interface : interfaces) {
-        sendRIPpacket(interface.destAddr, sendPacket);
+        sendRIPpacket(interface, sendPacket);
     }
 }
