@@ -492,9 +492,14 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
     std::cout << "received packet command is " << receivedPacket.command << std::endl;
     if (receivedPacket.command == 1) {
         // Deal with RIP request
+        // add to routing table
+        if (routingTable.find(RIPSrcAddr) == routingTable.end()) {
+            // If no entry exists, create an entry
+            // works under the assumption that rip packets set between neighbors
+            routingTable[RIPSrcAddr] = {RIPSrcAddr, 1};
+        }
         // RIP packet when responding to RIP request contains all routing table entries
         sendPacket = createRIPpacket(2, routingTable);
-        std::string nextHopAddr = std::get<0>(routingTable[RIPSrcAddr]);
         std::cout << "sending to " << RIPSrcAddr << std::endl;
         sendRIPpacket(RIPSrcAddr, sendPacket);
     } else if (receivedPacket.command == 2) {
@@ -509,17 +514,13 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
             if (routingTable.find(destAddr) == routingTable.end()) {
                 // If no entry exists, create an entry
                 // works under the assumption that rip packets set between neighbors
-                std::string nextHopAddr = std::get<0>(routingTable[RIPSrcAddr]);
-                routingTable[destAddr] = {nextHopAddr, entry.cost + 1};
+                routingTable[destAddr] = {RIPSrcAddr, entry.cost + 1};
             } else {
                 // Else, grab corresponding next hop and cost
 
                 // This grabs the old hop address and cost: the data associated
                 // with destination address
                 auto [oldHopAddr, oldCost] = routingTable[destAddr];
-
-                // This grabs the hop address from the RIP source
-                auto [newHopAddr, _] = routingTable[RIPSrcAddr];
 
                 // This is the interface we used to receive the update
                 // Interface interfaceRIP = ARPTable[newHopId];
@@ -532,14 +533,14 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
                 if (newCost < oldCost) {
                     // If the new cost is less then old cost, update with 
                     // the newHopdId
-                    routingTable[destAddr] = std::make_tuple(newHopAddr, newCost);
+                    routingTable[destAddr] = std::make_tuple(RIPSrcAddr, newCost);
                     updatedRoutes[destAddr] = routingTable[destAddr];
                 } 
-                else if (newCost > oldCost && oldHopAddr == newHopAddr) {
+                else if (newCost > oldCost && oldHopAddr == RIPSrcAddr) {
                     // Else, we only update the routing table 
                     // if new cost > old cost *and* the new cost and old cost
                     // come from the same source
-                    routingTable[destAddr] = std::make_tuple(oldHopAddr, newCost);
+                    routingTable[destAddr] = std::make_tuple(RIPSrcAddr, newCost);
                     updatedRoutes[destAddr] = routingTable[destAddr];
                 }
             }
