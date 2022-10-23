@@ -77,10 +77,6 @@ int main(int argc, char *argv[]) {
     IPCommands repl = IPCommands(node);
     repl.register_commands();
     
-    // Start listening thread on node
-    auto receiveFunc = std::bind(&Node::receive, node);
-    std::thread(receiveFunc).detach();
-
     std::string text;
     std::cout << "> ";
     while (std::getline(std::cin, text)) {

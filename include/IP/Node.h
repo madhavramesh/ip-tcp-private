@@ -68,14 +68,11 @@ class Node {
         // Loops infinitely while receiving packets
         void receive();
 
-        // Registers a handler for a new protocol (can be user provided)
-        void registerHandler(int protocol, ProtocolHandler func);
-
-        // Loops infinitely while receiving packets
-        void receive();
-
         // Loops infinitely sending RIP updates every 5 seconds
         void RIP();
+
+        // Registers a handler for a new protocol (can be user provided)
+        void registerHandler(int protocol, ProtocolHandler func);
 
     private:
         // Port that the socket will bind to

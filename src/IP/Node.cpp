@@ -305,10 +305,10 @@ std::vector<RIPentry> Node::SHPR(std::string packetDest, std::vector<RIPentry> u
 std::vector<RIPentry> Node::createRIPentries(std::unordered_map<std::string, std::tuple<int, int>> routes) {
     std::vector<RIPentry> ripEntries;
 
-    u_int32_t mask = ip::address_v4::from_string("255.255.255.255").to_ulong;
+    u_int32_t mask = ip::address_v4::from_string("255.255.255.255").to_ulong();
 
     for (auto [dest, tup] : routes) {
-        u_int32_t destInt = ip::address_v4::from_string(dest).to_ulong
+        u_int32_t destInt = ip::address_v4::from_string(dest).to_ulong();
         RIPentry entry = {std::get<1>(tup), destInt, mask};
         ripEntries.push_back(entry);
     }
