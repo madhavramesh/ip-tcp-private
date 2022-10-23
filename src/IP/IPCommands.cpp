@@ -121,7 +121,7 @@ void IPCommands::send(std::string& args) {
     }
 
     std::string payload = parsedArgs[2];
-    node->send(addr, protocol, payload);
+    node->sendCLI(addr, payload);
 }
 
 void IPCommands::up(std::string& args) {

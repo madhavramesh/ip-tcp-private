@@ -133,24 +133,48 @@ uint16_t Node::ip_sum(void *buffer, int len) {
 
 
 /**
- * Sends message (from CLI)
-*/
-void Node::send(
-    std::string address, 
-    int protocol, 
-    const std::string& payload) 
-{   
-    // #todo handle cases where address or next hop not in arp table
-    // specifically, routing table case
+ * @brief This send should be called from the CLI
+ * 
+ */
+void Node::sendCLI(std::string address, const std::string& payload) {
+    // Check if it exists in the routing table.
+    // Useful for perhaps when routing table entry expires
+    if (routingTable.find(address) == routingTable.end()) {
+        std::cerr << red << "Cannot send to " << address 
+            << ", it is an unreachable address." << reset << std::endl;
+        return;
+    }
     auto [nextHop, cost] = routingTable[address];
 
     // Check if interface has been disabled
+    // Useful if a user takes down a route
     if (!ARPTable[nextHop].up) {
         std::cerr << red << "Cannot send to " << address 
             << ", it is an unreachable address." << reset << std::endl;
         return;
     }
 
+    send(address, nextHop, payload, 0);
+}
+
+void Node::sendRIP(std::string address, int nextHop, const std::string& payload) {
+    // Check if interface has been disabled
+    if (!ARPTable[nextHop].up) {
+        return;
+    }
+
+    send(address, nextHop, payload, 200);
+}
+
+/**
+ * Sends message (from CLI)
+*/
+void Node::send(
+    std::string address, 
+    int nextHop,
+    const std::string& payload,
+    int protocol) 
+{   
     unsigned int destPort = ARPTable[nextHop].destPort;
     std::string srcAddr = ARPTable[nextHop].srcAddr;
     
@@ -205,8 +229,8 @@ void Node::forward(std::shared_ptr<struct ip> ipHeader,
  * @brief sends rip packet RIP RIP
  * 
  */
-void Node::sendRIPpacket(std::string dest, struct RIPpacket packet) {
-    packet.entries = SHPR(dest, packet.entries);
+void Node::sendRIPpacket(Interface interface, struct RIPpacket packet) {
+    packet.entries = SHPR(interface.destAddr, packet.entries);
 
     packet.command = htons(packet.command);
     packet.num_entries = htons(packet.num_entries);
@@ -229,9 +253,9 @@ void Node::sendRIPpacket(std::string dest, struct RIPpacket packet) {
 
     // copy rest
     memcpy((char *)payload.data() + front_size, &packet.entries[0], total_size - front_size);
-
+    
     // send w/ 200 as protocol
-    send(dest, 200, payload);
+    sendRIP(interface.destAddr, interface.id, payload);
 }
 
 
@@ -308,8 +332,6 @@ RIPpacket Node::createRIPpacket(uint16_t type,
  *
  */
 void Node::RIP() {
-    std::cout << "thread for RIP started" << std::endl;
-
     // Send request to each interface
     std::vector<Interface> interfaces = getInterfaces();
     for (auto& interface : interfaces) {
@@ -318,8 +340,7 @@ void Node::RIP() {
         packet.num_entries = 0;
         packet.entries = {};
 
-        std::cout << "sending request to " << interface.destAddr << std::endl;
-        sendRIPpacket(interface.destAddr, packet); // type 1 for request
+        sendRIPpacket(interface, packet); // type 1 for request
     }
 
     // every 5 seconds, send out a response/update 
@@ -329,7 +350,7 @@ void Node::RIP() {
         RIPpacket packet = createRIPpacket(2, routingTable);
         // #todo lock interfaces
         for (Interface interface : interfaces) {
-            sendRIPpacket(interface.destAddr, packet);
+            sendRIPpacket(interface, packet);
         }
 
         std::chrono::seconds dura(5);
@@ -423,6 +444,5 @@ void Node::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& data) {
 }
 
 void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& data) {
-    std::cout << "You have entered the RIP handler!" << std::endl;
     return;
 }

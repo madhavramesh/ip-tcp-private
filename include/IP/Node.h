@@ -53,17 +53,15 @@ class Node {
         // Disable an interface; Returns false if interface not found
         bool disableInterface(int id);
 
+
+        void sendCLI(std::string address, const std::string& payload);
+        void sendRIP(std::string address, int nextHop, const std::string& payload);
+
         // Returns all non-negative interfaces 
         // (interfaces that don't have smae source and destination address)
         std::vector<Interface> getInterfaces();
         // Returns all possible routes in the form (source address, destination address, cost)
         std::vector<std::tuple<std::string, std::string, int>> getRoutes();
-
-        // Constructs IPv4 header and sends packet
-        void send(
-            std::string address, 
-            int protocol, 
-            const std::string& payload);
 
         // Loops infinitely while receiving packets
         void receive();
@@ -89,8 +87,12 @@ class Node {
 
         uint16_t ip_sum(void *buffer, int len);
 
-        // Calculates checksum of an IP Header
-        int calculateChecksum(std::shared_ptr<struct ip> ipHeader);
+        // Constructs IPv4 header and sends packet
+        void send(
+            std::string address, 
+            int nextHop,
+            const std::string& payload,
+            int protocol);
 
         // Forwards a packet to destination
         // NOTE: Modifies shared pointer
@@ -104,7 +106,7 @@ class Node {
         void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& data);
 
-        void sendRIPpacket(std::string dest, struct RIPpacket);
+        void sendRIPpacket(Interface interface, struct RIPpacket);
 
         // Implements split horizon with poison reverse
         // Takes in destination and vector of RIP entries
