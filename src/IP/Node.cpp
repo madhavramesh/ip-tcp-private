@@ -210,14 +210,8 @@ void Node::send(
 
     // Copy contents of old ip header and payload into new payload
     memcpy(&new_payload[0], ip_header.get(), sizeof(struct ip));
-<<<<<<< HEAD
     memcpy(&new_payload[0] + sizeof(struct ip), &payload[0], payload.size());
-=======
-    // memcpy(&new_payload[0] + sizeof(struct ip), &payload, payload.size());
-    memcpy(&new_payload[0] + sizeof(struct ip), payload.data(), payload.size());
 
->>>>>>> e90bc37752d194afc9fda0ad3fe7e1c2ea7cbe51
-    
     // // Convert ip_header to a string
     // char b[sizeof(struct ip)];
     // std::cpy(b, ip_header, sizeof(struct ip));

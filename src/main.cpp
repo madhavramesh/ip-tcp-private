@@ -77,10 +77,6 @@ int main(int argc, char *argv[]) {
     IPCommands repl = IPCommands(node);
     repl.register_commands();
     
-    // Start listening thread on node
-    auto receiveFunc = std::bind(&Node::receive, node);
-    std::thread(receiveFunc).detach();
-
     std::string text;
     std::cout << "> ";
     while (std::getline(std::cin, text)) {
@@ -92,11 +88,8 @@ int main(int argc, char *argv[]) {
         std::cout << "> ";
     }
 
-<<<<<<< HEAD
-=======
     // ------------------------------------------------------------------------- 
 
->>>>>>> e90bc37752d194afc9fda0ad3fe7e1c2ea7cbe51
     // Clean up
     free_links(root);
 }
