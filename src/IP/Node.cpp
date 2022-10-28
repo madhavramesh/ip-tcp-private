@@ -552,11 +552,11 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
         if (receivedPacket.command == 1) {
             // Deal with RIP request
             // add to routing table
-            if (routingTable.find(RIPSrcAddr) == routingTable.end()) {
-                // If no entry exists, create an entry
-                // works under the assumption that rip packets set between neighbors
-                routingTable[RIPSrcAddr] = {RIPSrcAddr, 1, t};
-            } 
+
+            // If no entry exists, create an entry
+            // works under the assumption that rip packets set between neighbors
+            routingTable[RIPSrcAddr] = {RIPSrcAddr, 1, t};
+
             // RIP packet when responding to RIP request contains all routing table entries
             sendPacket = createRIPpacket(2, routingTable);
             sendRIPpacket(RIPSrcAddr, sendPacket);
@@ -583,7 +583,7 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
 
                     // This grabs the old hop address and cost: the data associated
                     // with destination address
-                    auto [oldHopAddr, oldCost, time] = routingTable.at(destAddr);
+                    auto [oldHopAddr, oldCost, _] = routingTable.at(destAddr);
 
                     int newCost = entry.cost + 1;
                     if (newCost < oldCost) {
@@ -597,8 +597,8 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
                         // come from the same source
                         routingTable.at(destAddr) = std::make_tuple(RIPSrcAddr, newCost, t);
                         updatedRoutes[destAddr] = routingTable[destAddr];
-                    } else if (entry.cost != 16) {
-                        routingTable.at(destAddr) = std::make_tuple(oldHopAddr, oldCost, time);
+                    } else if (oldHopAddr == RIPSrcAddr && entry.cost != 16) {
+                        routingTable.at(destAddr) = std::make_tuple(oldHopAddr, oldCost, t);
                     }
                 }
             }
