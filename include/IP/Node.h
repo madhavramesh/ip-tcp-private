@@ -4,6 +4,7 @@
 #include <string>
 #include <unordered_map>
 #include <tuple>
+#include <chrono> 
 
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
@@ -80,14 +81,14 @@ class Node {
         // ARP Table: next hop address -> (port, interface id)
         std::unordered_map<std::string, std::tuple<unsigned int, int>> ARPTable;
         // Routing Table: destination address -> (next hop address, cost)
-        std::unordered_map<std::string, std::tuple<std::string, int>> routingTable;
+        std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> routingTable;
 
         uint16_t ip_sum(void *buffer, int len);
 
         // Given a subset of the routing table, generates a RIP entry for element.
         RIPpacket createRIPpacket(
             uint16_t type, 
-            std::unordered_map<std::string, std::tuple<std::string, int>> routes);
+            std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> routes);
 
         void sendRIPpacket(std::string address, struct RIPpacket packet);
 
@@ -116,4 +117,6 @@ class Node {
             size_t receivedBytes, boost::asio::ip::udp::endpoint receiverEndpoint);
         void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
+
+        void cleanUpRoutingTable(std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> &routingTable);
 };
