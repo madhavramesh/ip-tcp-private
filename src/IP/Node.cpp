@@ -67,7 +67,10 @@ bool Node::enableInterface(int id) {
         return false;
     }
 
-    interfaces[id].up = true;
+    {
+        std::scoped_lock lock(routingTableMtx);
+        interfaces[id].up = true;
+    }
     return true;
 }
 
@@ -80,7 +83,10 @@ bool Node::disableInterface(int id) {
         return false;
     }
 
-    interfaces[id].up = false;
+    {
+        std::scoped_lock lock(routingTableMtx);
+        interfaces[id].up = false;
+    }
     return true;
 }
 
@@ -110,22 +116,18 @@ std::vector<std::tuple<Interface, std::string, int>> Node::getInterfaces() {
 
 std::vector<std::tuple<std::string, std::string, int>> Node::getRoutes() {
     // 1) Check last time updated
+    std::scoped_lock lock(routingTableMtx);
     cleanUpRoutingTable(routingTable);
     
     std::vector<std::tuple<std::string, std::string, int>> routes;
+    for (auto& [destAddr, nextHop] : routingTable) {
+        auto [nextHopAddr, cost, time] = nextHop;
 
-    {
-        std::scoped_lock lock(routingTableMtx);
-
-        for (auto& [destAddr, nextHop] : routingTable) {
-            auto [nextHopAddr, cost, time] = nextHop;
-
-            int interfaceId = get<1>(ARPTable[nextHopAddr]);
-            Interface& interface = interfaces[interfaceId];
-            if (interface.up) {
-                auto route = std::make_tuple(destAddr, nextHopAddr, cost);
-                routes.push_back(route);
-            }
+        int interfaceId = get<1>(ARPTable.at(nextHopAddr));
+        Interface& interface = interfaces[interfaceId];
+        if (interface.up) {
+            auto route = std::make_tuple(destAddr, nextHopAddr, cost);
+            routes.push_back(route);
         }
     }
     return routes;
@@ -167,8 +169,6 @@ uint16_t Node::ip_sum(void *buffer, int len) {
  * 
  */
 void Node::sendCLI(std::string address, const std::string& payload) {
-    // 2) Check last time updated
-    cleanUpRoutingTable(routingTable);
     
     // Check if it exists in the routing table.
     // Useful for perhaps when routing table entry expires
@@ -177,15 +177,18 @@ void Node::sendCLI(std::string address, const std::string& payload) {
     std::chrono::time_point<std::chrono::steady_clock> time;
     {
         std::scoped_lock lock(routingTableMtx);
+        // 2) Check last time updated
+        cleanUpRoutingTable(routingTable);
+
         if (routingTable.find(address) == routingTable.end()) {
             std::cerr << red << "Cannot send to " << address 
                 << ", it is an unreachable address." << color_reset << std::endl;
             return;
         }
-        std::tie(nextHopAddr, cost, time) = routingTable[address];
+        std::tie(nextHopAddr, cost, time) = routingTable.at(address);
     }
     // auto [nextHopAddr, cost, time] = routingTable[address];
-    int interfaceId = std::get<1>(ARPTable[nextHopAddr]);
+    int interfaceId = std::get<1>(ARPTable.at(nextHopAddr));
 
     // Check if interface has been disabled
     // Useful if a user takes down a route
@@ -205,30 +208,24 @@ void Node::sendCLI(std::string address, const std::string& payload) {
  * @return std::vector<RIPentry> 
  */
 RIPpacket Node::createRIPpacket(uint16_t type, 
-        std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> routes) {
+        std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>>& routes) {
     struct RIPpacket packet;
     packet.command = type;
 
     uint32_t mask = ip::address_v4::from_string("255.255.255.255").to_ulong();
     for (auto [destAddr, nextHopTup] : routes) {
-        auto [nextHop, cost, t] = nextHopTup;
-        int interfaceID = std::get<1>(ARPTable[nextHop]);
-        // Only send if interface is up
-        if (interfaces[interfaceID].up) {
-            uint32_t destInt = ip::address_v4::from_string(destAddr).to_ulong();
-            RIPentry entry = { cost, destInt, mask };
-            packet.entries.push_back(entry);
-        }
+        int cost = std::get<1>(nextHopTup);
+        uint32_t destInt = ip::address_v4::from_string(destAddr).to_ulong();
+
+        RIPentry entry = { cost, destInt, mask };
+        packet.entries.push_back(entry);
     }
     packet.num_entries = packet.entries.size();
     return packet;
 }
 
 void Node::sendRIPpacket(std::string address, struct RIPpacket packet) {
-    // 1) Check last time updated
-    cleanUpRoutingTable(routingTable);
-    
-    int interfaceId = std::get<1>(ARPTable[address]);
+    int interfaceId = std::get<1>(ARPTable.at(address));
     // Check if interface has been disabled
     if (!interfaces[interfaceId].up) {
         return;
@@ -284,10 +281,10 @@ struct RIPpacket Node::SHPR(std::string packetDestAddr, struct RIPpacket packet)
         // #TODO think about error handling when entry doesn't exist?
         // Convert u_int_32_t to std::string
         std::string entryDest = ip::make_address_v4(entry.address).to_string();
-        std::string nextHopAddr = std::get<0>(routingTable[entryDest]);
+        std::string nextHopAddr = std::get<0>(routingTable.at(entryDest));
 
         // Find next hop *if* it exists and is not down
-        int interfaceId = std::get<1>(ARPTable[nextHopAddr]);
+        int interfaceId = std::get<1>(ARPTable.at(nextHopAddr));
         if (!interfaces[interfaceId].up) {
             continue;
         }
@@ -311,7 +308,7 @@ void Node::send(
     const std::string& payload,
     int protocol) 
 {   
-    auto [destPort, interfaceId] = ARPTable[nextHopAddr];
+    auto [destPort, interfaceId] = ARPTable.at(nextHopAddr);
     std::string srcAddr = interfaces[interfaceId].srcAddr;
     
     // Build IPv4 header
@@ -347,17 +344,14 @@ void Node::send(
 void Node::forward(std::string address, 
     const std::string& payload,
     std::shared_ptr<struct ip> ipHeader) {
-    // 3) Check last time updated
-    std::cout << "forwarding" << std::endl;
-    cleanUpRoutingTable(routingTable);
-
-
     std::string nextHopAddr;
     {
         std::scoped_lock lock(routingTableMtx);
-        nextHopAddr = std::get<0>(routingTable[address]);
+        cleanUpRoutingTable(routingTable);
+        
+        nextHopAddr = std::get<0>(routingTable.at(address));
     }
-    unsigned int destPort = std::get<0>(ARPTable[nextHopAddr]);
+    unsigned int destPort = std::get<0>(ARPTable.at(nextHopAddr));
 
     ipHeader->ip_ttl--;
     ipHeader->ip_sum = 0;
@@ -374,15 +368,17 @@ void Node::forward(std::string address,
 
 void Node::receive() {
     while (true) {
-        try {
+        // try {
             boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer;
             ip::udp::endpoint receiverEndpoint;
 
             size_t len = socket.receive_from(buffer(receiveBuffer), receiverEndpoint);
             genericHandler(receiveBuffer, len, receiverEndpoint);
-        } catch (std::exception& e) {
-            std::cerr << red << "Error: receiving packet: " << e.what() << color_reset << std::endl;
-        }
+        // }
+
+        // catch (std::exception& e) {
+            // std::cerr << red << "Error: receiving packet: " << e.what() << color_reset << std::endl;
+        // }
     }
 }
 
@@ -416,14 +412,18 @@ void Node::RIP() {
         RIPpacket packet;
         {
             std::scoped_lock lock(routingTableMtx);
+            cleanUpRoutingTable(routingTable);
             packet = createRIPpacket(2, routingTable);
         }
 
         for (auto& [nextHopAddr, nextHopInfo] : ARPTable) {
-            int interfaceId = std::get<1>(nextHopInfo);
+            auto [nextHopPort, interfaceId] = nextHopInfo;
             // Don't send RIP packets to node's own IP addresses
-            if (nextHopAddr != interfaces[interfaceId].srcAddr) {
+            if (nextHopPort != port) {
                 sendRIPpacket(nextHopAddr, packet);
+            } else if (interfaces[interfaceId].up) {
+                auto newTime = std::chrono::steady_clock::now();
+                routingTable[nextHopAddr] = make_tuple(nextHopAddr, 0, newTime);
             }
         }
 
@@ -473,11 +473,11 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
         if (!routingTable.count(destAddr)) {
             return;
         }
-        std::tie(nextHopAddr, cost, time) = routingTable[destAddr];
+        std::tie(nextHopAddr, cost, time) = routingTable.at(destAddr);
     }
 
     // Calculate whether packet has reached destination
-    auto [destPort, interfaceId] = ARPTable[nextHopAddr];
+    auto [destPort, interfaceId] = ARPTable.at(nextHopAddr);
 
     // Check if interface has been disabled
     if (!interfaces[interfaceId].up) {
@@ -494,7 +494,7 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     }
 
     // Packet has not reached destination so forward packet
-    if (ipHeader->ip_ttl > 0) {
+    if (routingTable.count(destAddr) && ipHeader->ip_ttl > 0) {
         forward(destAddr, payload, ipHeader);
     }
 }
@@ -547,15 +547,14 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
     {
         std::scoped_lock lock(routingTableMtx);
         // 4) Check last time updated
-        std::cout << "rip handler" << std::endl;
         cleanUpRoutingTable(routingTable);
+
         if (receivedPacket.command == 1) {
             // Deal with RIP request
             // add to routing table
             if (routingTable.find(RIPSrcAddr) == routingTable.end()) {
                 // If no entry exists, create an entry
                 // works under the assumption that rip packets set between neighbors
-                std::cout << "new entry being added" << std::endl;
                 routingTable[RIPSrcAddr] = {RIPSrcAddr, 1, t};
             } 
             // RIP packet when responding to RIP request contains all routing table entries
@@ -576,34 +575,30 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
                     // If no entry exists, create an entry
                     // works under the assumption that rip packets set between neighbors
                     // routingTable[destAddr] = {RIPSrcAddr, entry.cost + 1, t};
-                    routingTable.insert({destAddr, {RIPSrcAddr, entry.cost + 1, t}});
+                    if (entry.cost != 16) {
+                        routingTable[destAddr] = {RIPSrcAddr, entry.cost + 1, t};
+                    }
                 } else {
                     // Else, grab corresponding next hop and cost
 
                     // This grabs the old hop address and cost: the data associated
                     // with destination address
-                    auto [oldHopAddr, oldCost, time] = routingTable[destAddr];
+                    auto [oldHopAddr, oldCost, time] = routingTable.at(destAddr);
 
-                    int newCost;
-                
+                    int newCost = entry.cost + 1;
                     if (newCost < oldCost) {
                         // If the new cost is less then old cost, update with 
                         // the newHopdId
-                         newCost = entry.cost + 1;
-                    } 
-                    else if (newCost > oldCost && oldHopAddr == RIPSrcAddr) {
+                        routingTable.at(destAddr) = std::make_tuple(RIPSrcAddr, newCost, t);
+                        updatedRoutes[destAddr] = routingTable[destAddr];
+                    } else if (newCost > oldCost && oldHopAddr == RIPSrcAddr) {
                         // Else, we only update the routing table 
                         // if new cost > old cost *and* the new cost and old cost
                         // come from the same source
-                        newCost = entry.cost + 1;
-                    } else {
-                        newCost = oldCost;
-                    }
-                    
-                    routingTable[destAddr] = std::make_tuple(RIPSrcAddr, newCost, t);
-
-                    if (newCost != oldCost) {
+                        routingTable.at(destAddr) = std::make_tuple(RIPSrcAddr, newCost, t);
                         updatedRoutes[destAddr] = routingTable[destAddr];
+                    } else if (entry.cost != 16) {
+                        routingTable.at(destAddr) = std::make_tuple(oldHopAddr, oldCost, time);
                     }
                 }
             }
@@ -629,6 +624,7 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
  * If the time between the last time the entry was updated and the current time is 
  * greater than 12, it should "expire" and be removed from the routing table.
  * 
+ * NOTE: Must lock routingTableMtx before calling this function
  * @param routingTable 
  */
 void Node::cleanUpRoutingTable(std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> &routingTable) {
@@ -642,13 +638,9 @@ void Node::cleanUpRoutingTable(std::unordered_map<std::string, std::tuple<std::s
 
         // std::cout << std::c_time(chrono::steady_clock::to_time_t(end)) << std::endl;
         // std::cout << delta << std::endl;
-        std::string dest = it->first;
-        std::string src  = std::get<0>(val);
-        if(delta >= 12 && (dest != src)) {
-            std::cout << dest << " " << src << " entry has expired!" << std::endl;
+        if (delta >= 12) {
             it = routingTable.erase(it);
-        }
-        else {
+        } else {
             it++;
         }
     }

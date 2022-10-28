@@ -90,7 +90,7 @@ class Node {
         // Given a subset of the routing table, generates a RIP entry for element.
         RIPpacket createRIPpacket(
             uint16_t type, 
-            std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> routes);
+            std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>>& routes);
 
         void sendRIPpacket(std::string address, struct RIPpacket packet);
 
