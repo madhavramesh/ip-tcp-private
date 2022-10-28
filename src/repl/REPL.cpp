@@ -1,5 +1,7 @@
-#include "include/repl/REPL.h"
 #include <iostream>
+
+#include "include/repl/REPL.h"
+#include "include/repl/colors.h"
 
 const int MAX_LINE_SIZE = 80;
 const int FUNC_NAME_SIZE = 40;
@@ -49,5 +51,5 @@ void REPL::help() {
     finalStr += "No available commands";
   }
 
-  std::cout << finalStr;
+  std::cout << dim << finalStr << dim_reset;
 }

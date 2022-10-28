@@ -60,10 +60,10 @@ void Node::addInterface(
 
 bool Node::enableInterface(int id) {
     if (!interfaces.count(id)) {
-        std::cerr << red << "interface " << id << " does not exist" << reset << std::endl;
+        std::cerr << red << "interface " << id << " does not exist" << color_reset << std::endl;
         return false;
     } else if (interfaces[id].up) {
-        std::cerr << red << "interface " << id << " is already up" << reset << std::endl;
+        std::cerr << red << "interface " << id << " is already up" << color_reset << std::endl;
         return false;
     }
 
@@ -73,10 +73,10 @@ bool Node::enableInterface(int id) {
 
 bool Node::disableInterface(int id) {
     if (!interfaces.count(id)) {
-        std::cerr << red << "interface " << id << " does not exist" << reset << std::endl;
+        std::cerr << red << "interface " << id << " does not exist" << color_reset << std::endl;
         return false;
     } else if (!interfaces[id].up) {
-        std::cerr << red << "interface " << id << " is already down" << reset << std::endl;
+        std::cerr << red << "interface " << id << " is already down" << color_reset << std::endl;
         return false;
     }
 
@@ -179,7 +179,7 @@ void Node::sendCLI(std::string address, const std::string& payload) {
         std::scoped_lock lock(routingTableMtx);
         if (routingTable.find(address) == routingTable.end()) {
             std::cerr << red << "Cannot send to " << address 
-                << ", it is an unreachable address." << reset << std::endl;
+                << ", it is an unreachable address." << color_reset << std::endl;
             return;
         }
         std::tie(nextHopAddr, cost, time) = routingTable[address];
@@ -191,7 +191,7 @@ void Node::sendCLI(std::string address, const std::string& payload) {
     // Useful if a user takes down a route
     if (!interfaces[interfaceId].up) {
         std::cerr << red << "Cannot send to " << address 
-            << ", it is an unreachable address." << reset << std::endl;
+            << ", it is an unreachable address." << color_reset << std::endl;
         return;
     }
 
@@ -381,7 +381,7 @@ void Node::receive() {
             size_t len = socket.receive_from(buffer(receiveBuffer), receiverEndpoint);
             genericHandler(receiveBuffer, len, receiverEndpoint);
         } catch (std::exception& e) {
-            std::cerr << red << "Error: receiving packet: " << e.what() << reset << std::endl;
+            std::cerr << red << "Error: receiving packet: " << e.what() << color_reset << std::endl;
         }
     }
 }
@@ -477,8 +477,7 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     }
 
     // Calculate whether packet has reached destination
-    // auto [nextHopAddr, cost, time] = routingTable[destAddr];
-    auto [destPort, interfaceId] = ARPTable[destAddr];
+    auto [destPort, interfaceId] = ARPTable[nextHopAddr];
 
     // Check if interface has been disabled
     if (!interfaces[interfaceId].up) {
@@ -504,6 +503,7 @@ void Node::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload
     auto src_ip = ip::make_address_v4(ntohl(ipHeader->ip_src.s_addr));
     auto dest_ip = ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr));
 
+    std::cout << dim;
     std::cout << "\r" << std::flush;
     std::cout << "---Node received packet!---" << std::endl;
     std::cout << "\tsource IP      : " << src_ip << std::endl;
@@ -512,6 +512,7 @@ void Node::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload
     std::cout << "\tpayload length : " << payload.size() << std::endl;
     std::cout << "\tpayload        : " << payload << std::endl;
     std::cout << "---------------------------" << std::endl;
+    std::cout << dim_reset;
     std::cout << "> " << std::flush;
 }
 

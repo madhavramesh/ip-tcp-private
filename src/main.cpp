@@ -13,7 +13,7 @@ using namespace boost::asio;
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
-        std::cerr << red << "usage: ./node <linksfile>" << reset << std::endl;
+        std::cerr << red << "usage: ./node <linksfile>" << color_reset << std::endl;
         return -1;
     }
 
@@ -78,7 +78,7 @@ int main(int argc, char *argv[]) {
         try {
             repl.eval(text);
         } catch (std::exception& e) {
-            std::cerr << red << "exception: " << e.what() << reset << std::endl;
+            std::cerr << red << "exception: " << e.what() << color_reset << std::endl;
         }
         std::cout << "> ";
     }

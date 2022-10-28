@@ -53,7 +53,7 @@ void IPCommands::interfaces(std::string& args) {
     int spaceIdx = args.find(' ');
     std::string filename = args.substr(0, spaceIdx);
     if (filename.empty()) {
-        std::cout << interfaceString.str();
+        std::cout << dim << interfaceString.str() << dim_reset;
     } else {
         std::ofstream file(filename);
 
@@ -81,7 +81,7 @@ void IPCommands::routes(std::string& args) {
     int spaceIdx = args.find(' ');
     std::string filename = args.substr(0, spaceIdx);
     if (filename.empty()) {
-        std::cout << routeString.str();
+        std::cout << dim << routeString.str() << dim_reset;
     } else {
         std::ofstream file(filename);
 
@@ -94,22 +94,23 @@ void IPCommands::send(std::string& args) {
     std::vector<std::string> parsedArgs;
     int prevSpaceIdx = -1;
     int spaceIdx = -1;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         prevSpaceIdx = spaceIdx + 1;
         spaceIdx = args.find(' ', prevSpaceIdx);
 
         if (prevSpaceIdx == std::string::npos) {
-            std::cerr << red << "usage: " << "send " << sendParams << reset << std::endl;
+            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
             return;
         }
         parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
     }
+    std::string payload = args.substr(spaceIdx + 1);
     std::string addr = parsedArgs[0];
 
     // Check that protocol is a number
     for (char c : parsedArgs[1]) {
         if (!isdigit(c)) {
-            std::cerr << red << "usage: " << "send " << sendParams << reset << std::endl;
+            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
             return;
         }
     }
@@ -120,13 +121,12 @@ void IPCommands::send(std::string& args) {
         return;
     }
 
-    std::string payload = parsedArgs[2];
     node->sendCLI(addr, payload);
 }
 
 void IPCommands::up(std::string& args) {
     if (args.empty()) {
-        std::cerr << red << "usage: " << "down " << downParams << reset << std::endl;
+        std::cerr << red << "usage: " << "down " << downParams << color_reset << std::endl;
         return;
     }
 
@@ -134,20 +134,20 @@ void IPCommands::up(std::string& args) {
     std::string interfaceStr = args.substr(0, spaceIdx);
     for (char c : interfaceStr) {
         if (!isdigit(c)) {
-            std::cerr << red << "usage: " << "up "<< upParams << reset << std::endl;
+            std::cerr << red << "usage: " << "up "<< upParams << color_reset << std::endl;
             return;
         }
     }
     int interfaceNum = stoi(args.substr(0, spaceIdx));
 
     if (node->enableInterface(interfaceNum)) {
-        std::cout << "interface " << interfaceNum << " is now enabled" << std::endl;
+        std::cout << dim << "interface " << interfaceNum << " is now enabled" << dim_reset << std::endl;
     }
 }
 
 void IPCommands::down(std::string& args) {
     if (args.empty()) {
-        std::cerr << red << "usage: " << "down " << downParams << reset << std::endl;
+        std::cerr << red << "usage: " << "down " << downParams << color_reset << std::endl;
         return;
     }
 
@@ -155,14 +155,14 @@ void IPCommands::down(std::string& args) {
     std::string interfaceStr = args.substr(0, spaceIdx);
     for (char c : interfaceStr) {
         if (!isdigit(c)) {
-            std::cerr << red << "usage: " << "down " << downParams << reset << std::endl;
+            std::cerr << red << "usage: " << "down " << downParams << color_reset << std::endl;
             return;
         }
     }
     int interfaceNum = stoi(args.substr(0, spaceIdx));
 
     if (node->disableInterface(interfaceNum)) {
-        std::cout << "interface " << interfaceNum << " is now disabled" << std::endl;
+        std::cout << dim << "interface " << interfaceNum << " is now disabled" << dim_reset << std::endl;
     }
 }
 
