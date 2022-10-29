@@ -508,7 +508,7 @@ void Node::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload
     std::cout << "---Node received packet!---" << std::endl;
     std::cout << "\tsource IP      : " << src_ip << std::endl;
     std::cout << "\tdestination IP : " << dest_ip << std::endl;
-    std::cout << "\tprotocol       : " << ipHeader->ip_p << std::endl;
+    std::cout << "\tprotocol       : " << (int ) ipHeader->ip_p << std::endl;
     std::cout << "\tpayload length : " << payload.size() << std::endl;
     std::cout << "\tpayload        : " << payload << std::endl;
     std::cout << "---------------------------" << std::endl;
