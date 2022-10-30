@@ -9,6 +9,7 @@
 const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;
 
+const std::string interfacesParams = "<file>";
 const std::string routesParams = "<file>";
 const std::string sendParams = "<ip> <proto> <string>";
 const std::string upParams = "<interface-num>";
@@ -178,10 +179,13 @@ void IPCommands::register_commands() {
     using namespace std::placeholders;
 
     auto interfaces_func = std::bind(&IPCommands::interfaces, this, _1);
-    register_command(interfaces_func, "interfaces", "", interfacesInfo);
-
+    register_command(interfaces_func, "interfaces", interfacesParams, interfacesInfo);
+    register_command(interfaces_func, "li", interfacesParams, interfacesInfo);
+    
     auto routes_func = std::bind(&IPCommands::routes, this, _1);
     register_command(routes_func, "routes", routesParams, routesInfo);
+    register_command(routes_func, "lr", routesParams, routesInfo);
+
 
     auto send_func = std::bind(&IPCommands::send, this, _1);
     register_command(send_func, "send", sendParams, sendInfo);
@@ -194,7 +198,10 @@ void IPCommands::register_commands() {
 
     auto quit_func = std::bind(&IPCommands::quit, this, _1);
     register_command(quit_func, "quit", "", quitInfo);
+    register_command(quit_func, "q", "", quitInfo);
 
     auto help_func = std::bind(&IPCommands::help, this, _1);
     register_command(help_func, "help", "", helpInfo);
+    register_command(help_func, "h", "", helpInfo);
+
 }
