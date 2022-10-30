@@ -68,9 +68,6 @@ make
 ```
 A file called ```node``` should now exist in the ```build``` directory.
 
-# Notable Design and Implementation Details
-
-
 # Bugs
 
 None know so far.
