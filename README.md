@@ -1,78 +1,73 @@
 # IP
 
-## Todos
+The handout specifies the following three questions:
+1. How you abstract your link layer and its interfaces
+2. The thread model for your RIP implementation
+3. The steps you will need to process IP packets
 
-**Set up**
+The first question is answered in the "Link Layer + Interfaces" section.
 
-1. Set up CMAKE
-2. Set up boost
-3. Set up helper functions
-4. Figure out what clean should do
-5. Talk to Madhav about what to put in .gitignore (tools?)
-6. Talk about branches and how we want to do workflow
-7. CMAKE library for boost
+The second can be found in the "Threading + RIP" section.
 
-**Part One: IP-in-UDP Encapsulation**
+The third can be found in the "IP Layer + Routing" section.
 
-1. "IP-in-UDP encapsulation"
-2. Forwarding
+# Link Layer + Interfaces
 
-**Part Two: Routing**
+We abstracted away the link layer and its interfaces through a struct called ```Interface``` and functions that wrap around UDP socket calls. 
 
-1. Routing
+The ```Interface``` contains an ```id```, a boolean that represents if it is "up" or "down," and a string that represents it's local address. 
 
-**Random (for jack)**
+The functions that wrap around UDP socket calls are helper functions serialize/deserialize IP headers and construct/deconstruct the necessary UDP packets.
 
-- (DONE) Run the references to make sure you understand what is going on
-- Talk to someone about header files etc. cpp design
-- Need destructors for which functions?
-- **Structure for main/libraries etc.**
-- fprintf vs stderr
-- interface vs public include directories/libraries
+# IP Layer + Routing
 
-## Questions for design check
+A single node has private variables to represent the following notable structures:
+- The socket it uses to listen and send messages
+- A map that keeps track of its interfaces
+- A map representing the ARP table
+- A map representing the routing table
 
-- What should clean up do
-- Thread structure
-- What is being used when one node has multiple IPs -- NAT or ARP?
+To actually process IP packets, the node has a thread that continually listens on the socket for incoming messages. Then the following steps are taken:
+- It deserializes the first 20 bytes into an IP struct
+- It checks if the the packet has reached it's final destination
+  - If the current node is the final destination, it calls the appropriate handler based on the IP protocol number (so either the "Test" or "RIP" handler)
+  - If the current node is not the final destination, the node forwards the message via the ARP and routing tables
 
-## Design
+# Threading + RIP
 
-Three main folders:
+For each node there were 3 main threads. 
 
-1. Link
-2. IP
+One thread was for listening for commands from the CLI. It listens for user commands and calls the respective handlers. 
+
+One thread was for sending RIP messages every 5 seconds. This thread sends out the node's routing table after applying split horizon and poisoned reverse to it. 
+
+One thread for for listening for incoming messages. If those messages were test packets, it would either forward or handle them depending on the packet's final destination. If those messages were RIP packets, it would handle the packet by updating the node's routing table and sending triggered updates (after applying split horizon and poisoned reverse) if needed.
+
+# Project Structure
+
+Inside the ```src``` directory there are three main folders: 
+
+1. IP
+2. repl
 3. TCP
 
-Link should contain files that emulate the link layer using UDP.
+The ```IP``` folder contains a file ```IPCommands.cpp``` that contains implementations of CLI commands. The file ```Node.cpp``` contains implementations of internet protocol logic for a single node e.g. rip packets, forwarding, split horizon and poisoned reverse, creating IP headers, etc.
 
-IP should contain files that emulate nodes that follow the IP protocol.
+The ```repl``` folder contains a generic REPL implementation.
 
-TCP is for later.
+The ```TCP``` currently does not contain anything.
 
-The include folder is for headers.
+# CMAKE and Make Information
 
-## CMAKE and Make Information
+To set up and build the project we need to create a ```build``` directory and run ```make```. To do this, run the following commands from the root directory
+```
+mkdir build 
+cd build
+cmake ..
+make
+```
+A file called ```node``` should now exist in the ```build``` directory.
 
-_Insert directions on using cmake and make_
+# Bugs
 
-## Implementation Details
-
-Node constructor:
-
-- Create send socket
-- Bind socket to specific port
-- Store port
-  Node addInterface:
-
-- Given (port, IP)
-- Update ARP table
-- Update routing table if port = this node's port
-- Update vector/unordered map of all interfaces storing up and down?
-
-Node send:
-
-- Given (port, protocol, IP)
-- Look up to destination
-- Construct IPv4 header
-- Call sendPacket in Link
+None know so far.
