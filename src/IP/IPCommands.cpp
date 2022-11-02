@@ -5,6 +5,7 @@
 
 #include "include/IP/IPCommands.h"
 #include "include/repl/colors.h"
+#include "third_party/bonsai.c"
 
 const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;
@@ -168,6 +169,11 @@ void IPCommands::down(std::string& args) {
 }
 
 void IPCommands::quit(std::string& args) {
+    int argc = 1;
+    char **argv = new char *[1];
+    argv[0] = "--live";
+
+    runBonsai(argc, argv);
     exit(0);
 }
 
