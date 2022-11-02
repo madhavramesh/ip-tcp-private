@@ -5,3 +5,4 @@ include_directories(${CURSES_INCLUDE_DIR})
 
 add_library(third_party bonsai.c)
 target_link_libraries(third_party ${CURSES_LIBRARIES})
+target_include_directories(third_party PUBLIC ${CMAKE_SOURCE_DIR})

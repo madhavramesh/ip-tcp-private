@@ -15,45 +15,8 @@
 #include <ctype.h>
 #include <unistd.h>
 
-#include <bonsai.h>
+#include "third_party/bonsai.h"
 
-enum branchType {trunk, shootLeft, shootRight, dying, dead};
-struct config {
-	int live;
-	int infinite;
-	int screensaver;
-	int printTree;
-	int verbosity;
-	int lifeStart;
-	int multiplier;
-	int baseType;
-	int seed;
-	int leavesSize;
-	int save;
-	int load;
-	int targetBranchCount;
-	double timeWait;
-	double timeStep;
-	char* message;
-	char* leaves[64];
-	char* saveFile;
-	char* loadFile;
-};
-struct ncursesObjects {
-	WINDOW* baseWin;
-	WINDOW* treeWin;
-	WINDOW* messageBorderWin;
-	WINDOW* messageWin;
-	PANEL* basePanel;
-	PANEL* treePanel;
-	PANEL* messageBorderPanel;
-	PANEL* messagePanel;
-};
-struct counters {
-	int branches;
-	int shoots;
-	int shootCounter;
-};
 void quit(struct config *conf, struct ncursesObjects *objects, int returnCode) {
 	// delete panels
 	del_panel(objects->basePanel);

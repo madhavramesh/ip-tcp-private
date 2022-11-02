@@ -5,29 +5,78 @@
 extern "C" {
 #endif
 
-#include <stddef.h>
-#include <netinet/if_ether.h>
-#include <netinet/in.h>
+#include <curses.h>
+#include <panel.h>
 
-#define HOST_MAX_LENGTH 256 // RFC 2181
+enum branchType {trunk, shootLeft, shootRight, dying, dead};
+struct config {
+	int live;
+	int infinite;
+	int screensaver;
+	int printTree;
+	int verbosity;
+	int lifeStart;
+	int multiplier;
+	int baseType;
+	int seed;
+	int leavesSize;
+	int save;
+	int load;
+	int targetBranchCount;
+	double timeWait;
+	double timeStep;
+	char* message;
+	char* leaves[64];
+	char* saveFile;
+	char* loadFile;
+};
+struct ncursesObjects {
+	WINDOW* baseWin;
+	WINDOW* treeWin;
+	WINDOW* messageBorderWin;
+	WINDOW* messageWin;
+	PANEL* basePanel;
+	PANEL* treePanel;
+	PANEL* messageBorderPanel;
+	PANEL* messagePanel;
+};
+struct counters {
+	int branches;
+	int shoots;
+	int shootCounter;
+};
 
-typedef struct lnxbody_s {
-	char remote_phys_host[HOST_MAX_LENGTH]; 
-	uint16_t remote_phys_port;
-	struct in_addr local_virt_ip; // Network-byte-order
-	struct in_addr remote_virt_ip; // Network-byte-order
+void quit(struct config *conf, struct ncursesObjects *objects, int returnCode);
 
-	struct lnxbody_s *next;
-} lnxbody_t;
+int saveToFile(char* fname, int seed, int branchCount);
+int loadFromFile(struct config *conf);
 
-typedef struct {
-	uint16_t local_phys_port;
-	lnxbody_t* body;
-} lnxinfo_t;
+void finish(const struct config *conf, struct counters *myCounters);
+void printHelp(void);
 
-// Returns a lnxinfo_t struct. Call free_links to clean up
-lnxinfo_t *parse_links(char *filename);
-void free_links(lnxinfo_t *lnx);
+void drawBase(WINDOW* baseWin, int baseType);
+void drawWins(int baseType, struct ncursesObjects *objects);
+
+void roll(int *dice, int mod);
+
+int checkKeyPress(const struct config *conf, struct counters *myCounters);
+void updateScreen(float timeStep);
+
+void chooseColor(enum branchType type, WINDOW* treeWin);
+void setDeltas(enum branchType type, int life, int age, int multiplier, int *returnDx, int *returnDy);
+char* chooseString(const struct config *conf, enum branchType type, int life, int dx, int dy);
+void branch(struct config *conf, struct ncursesObjects *objects, struct counters *myCounters, int y, int x, enum branchType type, int life);
+void addSpaces(WINDOW* messageWin, int count, int *linePosition, int maxWidth);
+
+void createMessageWindows(struct ncursesObjects *objects, char* message);
+int drawMessage(const struct config *conf, struct ncursesObjects *objects, char* message);
+
+void init(const struct config *conf, struct ncursesObjects *objects);
+void growTree(struct config *conf, struct ncursesObjects *objects, struct counters *myCounters);
+void printstdscr(void);
+char* createDefaultCachePath(void);
+
+int runBonsai(int argc, char* argv[]);
 
 #ifdef __cplusplus
 }
