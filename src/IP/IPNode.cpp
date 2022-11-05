@@ -4,29 +4,29 @@
 #include <unordered_set>
 #include <mutex>
 
-#include "include/IP/Node.h"
+#include "include/IP/IPNode.h"
 #include "include/repl/colors.h"
 
 /**
  * Constructor
 */
-Node::Node(unsigned int port) : 
+IPNode::IPNode(unsigned int port) : 
     port(port), 
     socket(my_io_context, {ip::udp::v4(), port})
 {
     using namespace std::placeholders;
 
-    auto testFunc = std::bind(&Node::testHandler, this, _1, _2);
+    auto testFunc = std::bind(&IPNode::testHandler, this, _1, _2);
     registerHandler(0, testFunc);
 
-    auto ripFunc = std::bind(&Node::ripHandler, this, _1, _2);
+    auto ripFunc = std::bind(&IPNode::ripHandler, this, _1, _2);
     registerHandler(200, ripFunc);
 }
 
 /**
  * Adds interface 
 */
-void Node::addInterface(
+void IPNode::addInterface(
     int id,
     std::string srcAddr,
     std::string destAddr,
@@ -58,7 +58,7 @@ void Node::addInterface(
     }
 }
 
-bool Node::enableInterface(int id) {
+bool IPNode::enableInterface(int id) {
     if (!interfaces.count(id)) {
         std::cerr << red << "interface " << id << " does not exist" << color_reset << std::endl;
         return false;
@@ -74,7 +74,7 @@ bool Node::enableInterface(int id) {
     return true;
 }
 
-bool Node::disableInterface(int id) {
+bool IPNode::disableInterface(int id) {
     if (!interfaces.count(id)) {
         std::cerr << red << "interface " << id << " does not exist" << color_reset << std::endl;
         return false;
@@ -90,7 +90,7 @@ bool Node::disableInterface(int id) {
     return true;
 }
 
-std::vector<std::tuple<Interface, std::string, int>> Node::getInterfaces() {
+std::vector<std::tuple<Interface, std::string, int>> IPNode::getInterfaces() {
     std::vector<std::tuple<Interface, std::string, int>> interfacesToDisplay;
 
     std::unordered_set<int> addedInterfaceIds;
@@ -114,7 +114,7 @@ std::vector<std::tuple<Interface, std::string, int>> Node::getInterfaces() {
     return interfacesToDisplay;
 }
 
-std::vector<std::tuple<std::string, std::string, int>> Node::getRoutes() {
+std::vector<std::tuple<std::string, std::string, int>> IPNode::getRoutes() {
     // 1) Check last time updated
     std::scoped_lock lock(routingTableMtx);
     cleanUpRoutingTable(routingTable);
@@ -137,7 +137,7 @@ std::vector<std::tuple<std::string, std::string, int>> Node::getRoutes() {
 // Compute the IP checksum
 // This is a modified version of the example in RFC 1071
 // https://datatracker.ietf.org/doc/html/rfc1071#section-4.1
-uint16_t Node::ip_sum(void *buffer, int len) {
+uint16_t IPNode::ip_sum(void *buffer, int len) {
     uint8_t *p = (uint8_t *)buffer;
     uint16_t answer;
     long sum = 0;
@@ -168,7 +168,7 @@ uint16_t Node::ip_sum(void *buffer, int len) {
  * @brief This send should be called from the CLI
  * 
  */
-void Node::sendCLI(std::string address, const std::string& payload) {
+void IPNode::sendCLI(std::string address, const std::string& payload) {
     
     // Check if it exists in the routing table.
     // Useful for perhaps when routing table entry expires
@@ -207,7 +207,7 @@ void Node::sendCLI(std::string address, const std::string& payload) {
  * @param routes 
  * @return std::vector<RIPentry> 
  */
-RIPpacket Node::createRIPpacket(uint16_t type, 
+RIPpacket IPNode::createRIPpacket(uint16_t type, 
         std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>>& routes) {
     struct RIPpacket packet;
     packet.command = type;
@@ -224,7 +224,7 @@ RIPpacket Node::createRIPpacket(uint16_t type,
     return packet;
 }
 
-void Node::sendRIPpacket(std::string address, struct RIPpacket packet) {
+void IPNode::sendRIPpacket(std::string address, struct RIPpacket packet) {
     int interfaceId = std::get<1>(ARPTable.at(address));
     // Check if interface has been disabled
     if (!interfaces[interfaceId].up) {
@@ -271,7 +271,7 @@ void Node::sendRIPpacket(std::string address, struct RIPpacket packet) {
  * @param updates 
  * @return std::vector<RIPentry> 
  */
-struct RIPpacket Node::SHPR(std::string packetDestAddr, struct RIPpacket packet) {
+struct RIPpacket IPNode::SHPR(std::string packetDestAddr, struct RIPpacket packet) {
     struct RIPpacket modifiedPacket;
     modifiedPacket.command = packet.command;
 
@@ -302,7 +302,7 @@ struct RIPpacket Node::SHPR(std::string packetDestAddr, struct RIPpacket packet)
 /**
  * Sends message (from CLI)
 */
-void Node::send(
+void IPNode::send(
     std::string address, 
     std::string nextHopAddr,
     const std::string& payload,
@@ -341,7 +341,7 @@ void Node::send(
     socket.send_to(buffer(new_payload), {ip::udp::v4(), destPort});
 }
 
-void Node::forward(std::string address, 
+void IPNode::forward(std::string address, 
     const std::string& payload,
     std::shared_ptr<struct ip> ipHeader) {
     std::string nextHopAddr;
@@ -366,14 +366,16 @@ void Node::forward(std::string address,
     socket.send_to(buffer(newPayload), {ip::udp::v4(), destPort});
 }
 
-void Node::receive() {
+void IPNode::receive() {
     while (true) {
         // try {
             boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer;
             ip::udp::endpoint receiverEndpoint;
 
             size_t len = socket.receive_from(buffer(receiveBuffer), receiverEndpoint);
-            genericHandler(receiveBuffer, len, receiverEndpoint);
+
+            std::thread(&IPNode::genericHandler, this, receiveBuffer, len, receiverEndpoint).detach();
+            // genericHandler(receiveBuffer, len, receiverEndpoint);
         // }
 
         // catch (std::exception& e) {
@@ -389,7 +391,7 @@ void Node::receive() {
  * split horizon + poison reverse
  *
  */
-void Node::RIP() {
+void IPNode::RIP() {
     // Send request to each interface
     for (auto& [nextHopAddr, nextHopInfo] : ARPTable) {
         int interfaceId = std::get<1>(nextHopInfo);
@@ -432,11 +434,11 @@ void Node::RIP() {
     }
 }
 
-void Node::registerHandler(int protocol, ProtocolHandler func) {
+void IPNode::registerHandler(int protocol, ProtocolHandler func) {
     handlers[protocol] = func;
 }
 
-void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
+void IPNode::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
         size_t receivedBytes, ip::udp::endpoint receiverEndpoint) {
     // Need to check whether the port message was sent from appears in ARP Table
     // if (receiver_endpoint.port() != port) {
@@ -499,7 +501,7 @@ void Node::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer,
     }
 }
 
-void Node::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload) {
+void IPNode::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload) {
     auto src_ip = ip::make_address_v4(ntohl(ipHeader->ip_src.s_addr));
     auto dest_ip = ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr));
 
@@ -516,7 +518,7 @@ void Node::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload
     std::cout << "> " << std::flush;
 }
 
-void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload) {
+void IPNode::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload) {
     struct RIPpacket receivedPacket;
     
     memcpy(&receivedPacket.command, (char *)payload.data(), sizeof(receivedPacket.command));
@@ -627,7 +629,7 @@ void Node::ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload)
  * NOTE: Must lock routingTableMtx before calling this function
  * @param routingTable 
  */
-void Node::cleanUpRoutingTable(std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> &routingTable) {
+void IPNode::cleanUpRoutingTable(std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> &routingTable) {
     
     for (auto it = routingTable.begin(); it != routingTable.end();) {
         auto val = it->second;

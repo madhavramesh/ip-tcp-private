@@ -5,7 +5,7 @@
 
 #include "include/IP/IPCommands.h"
 #include "include/repl/colors.h"
-#include "third_party/bonsai.h"
+// #include "third_party/bonsai.h"
 
 const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;
@@ -30,7 +30,7 @@ const std::string downInfo = "Bring an interface 'down'.";
 const std::string quitInfo = "Quit this node.";
 const std::string helpInfo = "Show this help.";
 
-IPCommands::IPCommands(std::shared_ptr<Node> node) : node(node) {}
+IPCommands::IPCommands(std::shared_ptr<IPNode> node) : node(node) {}
 
 void IPCommands::interfaces(std::string& args) {
     std::vector<std::string> colNames = { "id", "state", "local", "remote", "port" };
@@ -169,11 +169,11 @@ void IPCommands::down(std::string& args) {
 }
 
 void IPCommands::quit(std::string& args) {
-    int argc = 1;
-    char **argv = new char *[1];
-    argv[0] = "--live";
-
-    runBonsai(argc, argv);
+    // int argc = 1;
+    // char **argv = new char *[1];
+    // argv[0] = "--live";
+//
+    // runBonsai(argc, argv);
     exit(0);
 }
 

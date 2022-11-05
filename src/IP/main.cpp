@@ -6,7 +6,7 @@
 #include "utils/parselinks.h"
 
 #include "include/IP/IPCommands.h"
-#include "include/IP/Node.h"
+#include "include/IP/IPNode.h"
 #include "include/repl/colors.h"
 
 using namespace boost::asio;
@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
     unsigned int local_phys_port = root->local_phys_port;
 
     // Create node
-    std::shared_ptr<Node> node = std::make_shared<Node>(local_phys_port);
+    std::shared_ptr<IPNode> node = std::make_shared<IPNode>(local_phys_port);
 
     // Loop through each interface
     lnxbody_t *curr, *next;
@@ -57,13 +57,13 @@ int main(int argc, char *argv[]) {
     // ------------------------------------------------------------------------- 
     // Start RIP thread
 
-    auto ripFunc = std::bind(&Node::RIP, node);
+    auto ripFunc = std::bind(&IPNode::RIP, node);
     std::thread(ripFunc).detach();
 
     // -------------------------------------------------------------------------
 
     // Start listening thread on node
-    auto receiveFunc = std::bind(&Node::receive, node);
+    auto receiveFunc = std::bind(&IPNode::receive, node);
     std::thread(receiveFunc).detach();
 
     // ------------------------------------------------------------------------- 

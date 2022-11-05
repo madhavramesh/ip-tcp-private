@@ -35,10 +35,10 @@ struct RIPpacket {
     std::vector<RIPentry> entries;
 };
 
-class Node {
+class IPNode {
 
     public:
-        Node (unsigned int port);
+        IPNode (unsigned int port);
 
         // Populates relevant data structures for each interface
         void addInterface(
