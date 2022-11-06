@@ -46,6 +46,23 @@ IPNode::IPNode(unsigned int port, std::shared_ptr<TCPNode> tcpNode) :
     // register TCP handler
 }
 
+IPNode::IPNode(unsigned int port, std::shared_ptr<TCPNode> tcpNode) {
+    tcpNode(tcpNode),
+    port(port), 
+    socket(my_io_context, {ip::udp::v4(), port})
+{
+    using namespace std::placeholders;
+
+    auto tcpFunc = std::bind(&IPNode::tcpHandler, this, _1, _2);
+    registerHandler(6, tcpFunc);
+
+    auto testFunc = std::bind(&IPNode::testHandler, this, _1, _2);
+    registerHandler(0, testFunc);
+
+    auto ripFunc = std::bind(&IPNode::ripHandler, this, _1, _2);
+    registerHandler(200, ripFunc);
+}
+
 /**
  * Adds interface 
 */
@@ -391,19 +408,12 @@ void IPNode::forward(std::string address,
 
 void IPNode::receive() {
     while (true) {
-        // try {
-            boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer;
-            ip::udp::endpoint receiverEndpoint;
+        boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer;
+        ip::udp::endpoint receiverEndpoint;
 
-            size_t len = socket.receive_from(buffer(receiveBuffer), receiverEndpoint);
+        size_t len = socket.receive_from(buffer(receiveBuffer), receiverEndpoint);
 
-            std::thread(&IPNode::genericHandler, this, receiveBuffer, len, receiverEndpoint).detach();
-            // genericHandler(receiveBuffer, len, receiverEndpoint);
-        // }
-
-        // catch (std::exception& e) {
-            // std::cerr << red << "Error: receiving packet: " << e.what() << color_reset << std::endl;
-        // }
+        std::thread(&IPNode::genericHandler, this, receiveBuffer, len, receiverEndpoint).detach();
     }
 }
 
@@ -522,6 +532,13 @@ void IPNode::genericHandler(boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer
     if (routingTable.count(destAddr) && ipHeader->ip_ttl > 0) {
         forward(destAddr, payload, ipHeader);
     }
+}
+
+void IPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload) {
+    std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
+    memcpy(tcpHeader.get(), &payload[0], sizeof(tcphdr));
+
+    tcpNode->receive(ipHeader, tcpHeader, payload);
 }
 
 void IPNode::testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload) {

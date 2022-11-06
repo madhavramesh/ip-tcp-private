@@ -8,19 +8,18 @@
 #include <mutex>
 
 #include "include/TCP/TCPNode.h"
-#include "include/TCP/TCPCommands.h"
 
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
 #include <netinet/ip.h>
+
+using namespace boost::asio;
 
 // need this here to avoid circular dependency?
 // https://stackoverflow.com/questions/625799/resolve-build-errors-due-to-circular-dependency-amongst-classes
 class TCPNode; 
 
 const int MAX_IP_PACKET_SIZE = 1400;
-
-using namespace boost::asio;
 
 typedef std::function<void(std::shared_ptr<struct ip>, std::string&)> ProtocolHandler;
 
@@ -43,7 +42,6 @@ struct RIPpacket {
 };
 
 class IPNode {
-
     public:
         IPNode(unsigned int port);
         IPNode(unsigned int port, std::shared_ptr<TCPNode> tcpNode);
@@ -60,19 +58,22 @@ class IPNode {
         // Disable an interface; Returns false if interface not found
         bool disableInterface(int id);
 
+        // Used to send a message from IP CLI or by TCPNode
         void sendCLI(std::string address, const std::string& payload);
 
         // Returns all non-negative interfaces 
-        // (interfaces that don't have smae source and destination address)
+        // (interfaces that don't have same source and destination address)
         std::vector<std::tuple<Interface, std::string, int>> getInterfaces();
         // Returns all possible routes in the form (source address, destination address, cost)
         std::vector<std::tuple<std::string, std::string, int>> getRoutes();
 
         // Loops infinitely while receiving packets
         void receive();
-
         // Loops infinitely sending RIP updates every 5 seconds
         void RIP();
+
+        // IP checksum calculation
+        uint16_t ip_sum(void *buffer, int len);
 
         // Registers a handler for a new protocol (can be user provided)
         void registerHandler(int protocol, ProtocolHandler func);
@@ -85,6 +86,7 @@ class IPNode {
         boost::asio::io_context my_io_context;
         boost::asio::ip::udp::socket socket;
 
+        // protocol number -> protocol handler func
         std::unordered_map<int, ProtocolHandler> handlers;
 
         // interface id -> interface
@@ -92,10 +94,10 @@ class IPNode {
         // ARP Table: next hop address -> (port, interface id)
         std::unordered_map<std::string, std::tuple<unsigned int, int>> ARPTable;
         // Routing Table: destination address -> (next hop address, cost)
-        std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> routingTable;
+        std::unordered_map<std::string, 
+            std::tuple<std::string, int, 
+            std::chrono::time_point<std::chrono::steady_clock>>> routingTable;
         std::mutex routingTableMtx;
-
-        uint16_t ip_sum(void *buffer, int len);
 
         // Given a subset of the routing table, generates a RIP entry for element.
         RIPpacket createRIPpacket(
@@ -127,6 +129,7 @@ class IPNode {
         void genericHandler(
             boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
             size_t receivedBytes, boost::asio::ip::udp::endpoint receiverEndpoint);
+        void tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
         void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 

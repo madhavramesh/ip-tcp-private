@@ -10,6 +10,10 @@
 #include <include/IP/IPNode.h>
 
 class IPNode;
+
+const int MIN_PORT = 1024;
+const int MAX_PORT = 65535;
+
 enum SocketState {
     LISTEN,
     SYN_RECV,
@@ -31,16 +35,18 @@ struct ClientSocket {
     unsigned int destPort;
     std::string srcAddr;
     unsigned int srcPort;
+    unsigned int seqNum;
+    unsigned int ackNum;
 };
 
 struct ListenSocket {
     int id;
-    SocketState state;
     std::string srcAddr;
     unsigned int srcPort;
-    std::deque<ClientSocket> completedConns;  // ESTABLISHED state
-    std::deque<ClientSocket> incompleteConns; // SYN-RECEIVED state
+    std::deque<int> completeConns;   // ESTABLISHED state
+    std::deque<int> incompleteConns; // SYN-RECEIVED state
 };
+
 
 class TCPNode {
     public:
@@ -105,13 +111,78 @@ class TCPNode {
         void close(int socket);
 
     private:
+        std::shared_ptr<IPNode> ipNode;
         int nextSockId;
+        // socket descriptor -> Client Socket
+        std::unordered_map<int, struct ClientSocket> client_sd_table;
+        // socket descriptor -> Listen Socket
+        std::unordered_map<int, struct ListenSocket> listen_sd_table;
 
-        // socket descriptor -> socket struct
-        std::unordered_map<int, ClientSocket> client_sd_table;
-        std::unordered_map<int, ListenSocket> listen_sd_table;
+        // dest port -> list of Listen Socket Descriptor
+        std::unordered_map<unsigned int, std::list<int>> listen_port_table;
+        // dest port -> list of Client Socket Descriptors
+        std::unordered_map<unsigned int, std::list<int>> client_port_table;
 
-        // Maps destination ports to client sockets
-        std::unordered_map<int, std::list<ClientSocket>> client_port_table;
-        std::unordered_map<int, std::list<ListenSocket>> listen_port_table;
+        void send(ClientSocket& clientSock, unsigned char sendFlags);
+
+        void receive(
+            std::shared_ptr<struct ip> ipHeader, 
+            std::shared_ptr<struct tcphdr> tcpHeader,
+            std::string& payload
+        );
+
+        template <typename Iter>
+        int getClientSocket(
+            std::string& srcAddr,
+            unsigned int srcPort,
+            std::string& destAddr,
+            unsigned int destPort,
+            Iter& it) {
+            int clientSocketDescriptor = -1;
+            for (const auto& socketDescriptor : it) {
+                if (!client_sd_table.count(socketDescriptor)) {
+                    continue;
+                }
+
+                // Check that (srcAddr, srcPort, destAddr, destPort) match
+                ClientSocket& clientSock = client_sd_table[socketDescriptor];
+                if (clientSock.srcAddr == destAddr && clientSock.srcPort == destPort && 
+                        clientSock.destAddr == srcAddr && clientSock.destPort == srcPort && 
+                        clientSock.state == SocketState::SYN_RECV) {
+                    clientSocketDescriptor = socketDescriptor;
+                    break;
+                }
+            }
+            return clientSocketDescriptor;
+        };
+
+        template <typename Iter>
+        int getListenSocket(unsigned int destPort, Iter& it) {
+            int listenSocketDescriptor = -1;
+            for (const auto& socketDescriptor : it) {
+                if (!listen_sd_table.count(socketDescriptor)) {
+                    continue;
+                }
+
+                if (listen_sd_table[socketDescriptor].srcPort == destPort) {
+                    listenSocketDescriptor = socketDescriptor;
+                    break;
+                }
+            }
+            return listenSocketDescriptor;
+        };
+
+        uint16_t computeTCPChecksum(
+            uint32_t virtual_ip_src, 
+            uint32_t virtual_ip_dst,
+            std::shared_ptr<struct tcphdr> tcp_header,
+            std::string& payload
+        );
+
+        unsigned int generateISN(
+            std::string& srcAddr,
+            unsigned int srcPort,
+            std::string& destAddr,
+            unsigned int destPort
+        );
 };
