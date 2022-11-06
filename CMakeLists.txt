@@ -13,7 +13,9 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/")
 include(Boost)
 
 # anytime new cpp file used in main, need to add here
-set(SOURCES src/IP/main.cpp src/IP/IPNode.cpp src/repl/REPL.cpp src/IP/IPCommands.cpp)
+set(SOURCES src/TCP/main.cpp src/TCP/TCPCommands.cpp src/TCP/TCPNode.cpp
+            src/IP/IPNode.cpp src/IP/IPCommands.cpp
+            src/repl/REPL.cpp )
 
 # add subdirectories
 add_subdirectory(utils)

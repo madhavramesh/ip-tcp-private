@@ -21,6 +21,29 @@ IPNode::IPNode(unsigned int port) :
 
     auto ripFunc = std::bind(&IPNode::ripHandler, this, _1, _2);
     registerHandler(200, ripFunc);
+
+    // #todo
+    // register TCP handler
+}
+
+/**
+ * Constructor
+*/
+IPNode::IPNode(unsigned int port, std::shared_ptr<TCPNode> tcpNode) : 
+    port(port), 
+    socket(my_io_context, {ip::udp::v4(), port})
+{
+    using namespace std::placeholders;
+
+    auto testFunc = std::bind(&IPNode::testHandler, this, _1, _2);
+    registerHandler(0, testFunc);
+
+    auto ripFunc = std::bind(&IPNode::ripHandler, this, _1, _2);
+    registerHandler(200, ripFunc);
+
+    this->tcpNode = tcpNode;
+    // #todo
+    // register TCP handler
 }
 
 /**

@@ -2,15 +2,14 @@
 
 #include <unordered_map>
 #include <vector>
-<<<<<<< Updated upstream
 #include <deque>
-#include <unordered_map>
-=======
 #include <string>
->>>>>>> Stashed changes
+#include <list>
+#include <memory>
 
 #include <include/IP/IPNode.h>
 
+class IPNode;
 enum SocketState {
     LISTEN,
     SYN_RECV,
@@ -25,14 +24,6 @@ enum SocketState {
     CLOSED,
 };
 
-struct ListenSocket {
-    int id;
-    std::string srcAddr;
-    unsigned int srcPort;
-    deque<ClientSocket> completeConns;   // ESTABLISHED state
-    deque<ClientSocket> incompleteConns; // SYN-RECEIVED state
-}
-
 struct ClientSocket {
     int id;
     SocketState state;
@@ -42,9 +33,27 @@ struct ClientSocket {
     unsigned int srcPort;
 };
 
+struct ListenSocket {
+    int id;
+    SocketState state;
+    std::string srcAddr;
+    unsigned int srcPort;
+    std::deque<ClientSocket> completedConns;  // ESTABLISHED state
+    std::deque<ClientSocket> incompleteConns; // SYN-RECEIVED state
+};
+
 class TCPNode {
     public:
+        std::shared_ptr<IPNode> ipNode;
+        
+        // Initializes new IPNode
         TCPNode(unsigned int port);
+
+        // creates a new socket and connects to an address (active OPEN in the RFC)
+        // returns the socket number on success or a negative number on failure
+        // You may choose to implement a blocking connect or non-blocking connect
+        // Some possible failures: EAGAIN, ECONNREFUSED, ENETUNREACH, ETIMEDOUT
+        int connect(std::string& address, unsigned int port);
 
         // creates a new socket, binds the socket to an address/port
         // If addr is nil/0, bind to any available interface
@@ -53,13 +62,6 @@ class TCPNode {
         // Some possible failures: ENOMEM, EADDRINUSE, EADDRNOTAVAIL
         // (Note that a listening socket is used for "accepting new
         // connections")
-        int connect(std::string& address, unsigned int port);
-
-
-        // creates a new socket and connects to an address (active OPEN in the RFC)
-        // returns the socket number on success or a negative number on failure
-        // You may choose to implement a blocking connect or non-blocking connect
-        // Some possible failures: EAGAIN, ECONNREFUSED, ENETUNREACH, ETIMEDOUT
         int listen(std::string& address, unsigned int port);
 
         // accept a requested connection from the listening socket's connection queue
@@ -103,8 +105,13 @@ class TCPNode {
         void close(int socket);
 
     private:
-        IPNode ipNode;
+        int nextSockId;
+
         // socket descriptor -> socket struct
-        std::unordered_map<int, struct ClientSocket> client_socket_table;
-        std::unordered_map<int, struct ListenSocket> listen_socket_table;
+        std::unordered_map<int, ClientSocket> client_sd_table;
+        std::unordered_map<int, ListenSocket> listen_sd_table;
+
+        // Maps destination ports to client sockets
+        std::unordered_map<int, std::list<ClientSocket>> client_port_table;
+        std::unordered_map<int, std::list<ListenSocket>> listen_port_table;
 };

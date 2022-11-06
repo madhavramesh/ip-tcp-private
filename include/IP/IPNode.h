@@ -7,9 +7,16 @@
 #include <chrono> 
 #include <mutex>
 
+#include "include/TCP/TCPNode.h"
+#include "include/TCP/TCPCommands.h"
+
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
 #include <netinet/ip.h>
+
+// need this here to avoid circular dependency?
+// https://stackoverflow.com/questions/625799/resolve-build-errors-due-to-circular-dependency-amongst-classes
+class TCPNode; 
 
 const int MAX_IP_PACKET_SIZE = 1400;
 
@@ -39,6 +46,7 @@ class IPNode {
 
     public:
         IPNode(unsigned int port);
+        IPNode(unsigned int port, std::shared_ptr<TCPNode> tcpNode);
 
         // Populates relevant data structures for each interface
         void addInterface(
@@ -70,6 +78,8 @@ class IPNode {
         void registerHandler(int protocol, ProtocolHandler func);
 
     private:
+        std::shared_ptr<TCPNode> tcpNode;
+
         // Port that the socket will bind to
         unsigned int port;
         boost::asio::io_context my_io_context;

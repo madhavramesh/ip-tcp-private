@@ -32,6 +32,7 @@ const std::string helpInfo = "Show this help.";
 
 IPCommands::IPCommands(std::shared_ptr<IPNode> node) : node(node) {}
 
+
 void IPCommands::interfaces(std::string& args) {
     std::vector<std::string> colNames = { "id", "state", "local", "remote", "port" };
 

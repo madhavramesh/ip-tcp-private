@@ -1,3 +1,5 @@
+#pragma once 
+
 #include <string>
 
 const std::string red("\033[0;31;1m");

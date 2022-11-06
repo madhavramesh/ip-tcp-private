@@ -8,6 +8,8 @@
 #include "include/TCP/TCPCommands.h"
 #include "include/TCP/TCPNode.h"
 #include "include/repl/colors.h"
+#include "include/IP/IPCommands.h"
+#include "include/IP/IPNode.h"
 
 using namespace boost::asio;
 
@@ -29,7 +31,7 @@ int main(int argc, char *argv[]) {
     unsigned int local_phys_port = root->local_phys_port;
 
     // Create node
-    std::shared_ptr<IPNode> node = std::make_shared<IPNode>(local_phys_port);
+    std::shared_ptr<TCPNode> node = std::make_shared<TCPNode>(local_phys_port);
 
     // Loop through each interface
     lnxbody_t *curr, *next;
@@ -50,26 +52,26 @@ int main(int argc, char *argv[]) {
         std::cout << id << ": " << lv_ip << std::endl;
 
         // Add interface
-        node->addInterface(id, lv_ip.to_string(), rv_ip.to_string(), remote_phys_port);
+        node->ipNode->addInterface(id, lv_ip.to_string(), rv_ip.to_string(), remote_phys_port);
         id++;
     }
 
     // ------------------------------------------------------------------------- 
-    // Start RIP thread
+    // Start RIP thread in IP node
 
-    auto ripFunc = std::bind(&IPNode::RIP, node);
+    auto ripFunc = std::bind(&IPNode::RIP, node->ipNode);
     std::thread(ripFunc).detach();
 
     // -------------------------------------------------------------------------
+    // Start listening thread on IP node
 
-    // Start listening thread on node
-    auto receiveFunc = std::bind(&IPNode::receive, node);
+    auto receiveFunc = std::bind(&IPNode::receive, node->ipNode);
     std::thread(receiveFunc).detach();
 
     // ------------------------------------------------------------------------- 
 
     // Set up REPL
-    IPCommands repl = IPCommands(node);
+    IPCommands repl = IPCommands(std::shared_ptr<IPNode>(node->ipNode));
     repl.register_commands();
 
     std::string text;
