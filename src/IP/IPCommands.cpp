@@ -5,7 +5,7 @@
 
 #include "include/IP/IPCommands.h"
 #include "include/repl/colors.h"
-// #include "third_party/bonsai.h"
+#include "third_party/bonsai.h"
 
 const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;
@@ -172,8 +172,8 @@ void IPCommands::quit(std::string& args) {
     // int argc = 1;
     char *argv[] = {"bonsai", "-l", NULL};
     // argv[1] = ;
-    // runBonsai(argc, argv);
-    execv("third_party/bonsai", argv);
+    runBonsai(argc, argv);
+    // execv("third_party/bonsai", argv);
     exit(0);
 }
 
