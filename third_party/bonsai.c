@@ -619,7 +619,8 @@ char* createDefaultCachePath(void) {
 	strcpy(result, toAppend);
 	return result;
 }
-int runBonsai(int argc, char* argv[]) {
+int main(int argc, char* argv[]) {
+	printf("%s\n", argv[1]);
 	setlocale(LC_ALL, "");
 	struct config conf = {
 		.live = 0,

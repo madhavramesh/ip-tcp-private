@@ -17,7 +17,7 @@ set(SOURCES src/IP/main.cpp src/IP/IPNode.cpp src/repl/REPL.cpp src/IP/IPCommand
 
 # add subdirectories
 add_subdirectory(utils)
-# add_subdirectory(third_party)
+add_subdirectory(third_party)
 
 add_executable(node ${SOURCES})
 target_link_libraries(node pthread utilities ${Boost_LIBRARIES})
