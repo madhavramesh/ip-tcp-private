@@ -1,6 +1,8 @@
 #pragma once
 
 #include <vector>
+#include <deque>
+#include <unordered_map>
 
 using namespace boost::asio;
 
@@ -18,7 +20,15 @@ enum SocketState {
     CLOSED,
 };
 
-struct Socket {
+struct ListenSocket {
+    int id;
+    std::string srcAddr;
+    unsigned int srcPort;
+    deque<ClientSocket> completeConns;   // ESTABLISHED state
+    deque<ClientSocket> incompleteConns; // SYN-RECEIVED state
+}
+
+struct ClientSocket {
     int id;
     std::string destAddr;
     unsigned int destPort;
@@ -39,4 +49,7 @@ class TCPNode {
         void close(int socket);
 
     private:
+        IPNode ipNode;
+        std::unordered_map<int, struct ClientSocket> client_socket_table;
+        std::unordered_map<int, struct ListenSocket> listen_socket_table;
 };

@@ -169,7 +169,7 @@ void IPCommands::down(std::string& args) {
 }
 
 void IPCommands::quit(std::string& args) {
-    // int argc = 1;
+    int argc = 2;
     char *argv[] = {"bonsai", "-l", NULL};
     // argv[1] = ;
     runBonsai(argc, argv);
