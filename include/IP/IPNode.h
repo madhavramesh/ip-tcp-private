@@ -38,7 +38,7 @@ struct RIPpacket {
 class IPNode {
 
     public:
-        IPNode (unsigned int port);
+        IPNode(unsigned int port);
 
         // Populates relevant data structures for each interface
         void addInterface(
