@@ -8,8 +8,6 @@
 #include "include/TCP/TCPCommands.h"
 #include "include/TCP/TCPNode.h"
 #include "include/repl/colors.h"
-#include "include/IP/IPCommands.h"
-#include "include/IP/IPNode.h"
 
 using namespace boost::asio;
 

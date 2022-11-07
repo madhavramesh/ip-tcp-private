@@ -15,7 +15,7 @@ const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;
 
 // param info
-const std::string socketParams      = "";
+const std::string lsParams          = "";
 const std::string acceptParams      = "<port>";
 const std::string connectParams     = "<ip> <port>";
 const std::string sendParams        = "<socket ID> <data>";
@@ -27,7 +27,7 @@ const std::string recvfileParams    = "<filename> <port>";
 const std::string quitParams        = "";
 
 // command info
-const std::string socketInfo        = "Prints out the socket information";
+const std::string lsInfo            = "Prints out the socket information";
 const std::string acceptInfo        = "Accepts a connection on the given port";
 const std::string connectInfo       = "Connects to the given ip and port";
 const std::string sendInfo          = "Sends data to the given socket";
@@ -115,13 +115,20 @@ void TCPCommands::accept(std::string& args) {
     }
 
     // Parse the port
-    int port = std::stoi(args);
+    int spaceIdx = args.find(' ');
+    int port = stoi(args.substr(0, spaceIdx));
 
     // Listen and accept.
     // Note, hard coded "127.0.0.1"
     // #todo put accept into while loop and/or makenot blocking
     std::string default_addr = "127.0.0.1";
     int sockListener = tcpNode->listen(default_addr, port);
+
+    if (sockListener < 0) {
+        std::cerr << "error: cannot bind to port " << port << std::endl;
+        return;
+    }
+
     std::string address = "";
     int sockClient; 
     
@@ -147,11 +154,19 @@ void TCPCommands::connect(std::string& args) {
     }
 
     std::string ip = parsedArgs[0];
-    std::string port = parsedArgs[1];
+
+    // Check that port is a number
+    for (char c : parsedArgs[1]) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            return;
+        }
+    }
+    unsigned int port = std::stoi(parsedArgs[1]);
 
     // Connect
     // #todo implement failures e.g. ENOMEM EADDRINUSE EADDRNOTAVAIL
-    int sock = tcpNode->connect(ip, std::stoi(port));
+    int sock = tcpNode->connect(ip, port);
     if (sock < 0) {
         std::cerr << red << "Failed to connect to " << ip << ":" << port << color_reset << std::endl;
     }
@@ -230,7 +245,7 @@ void TCPCommands::register_commands() {
     // Register commands
 
     auto socket_func = std::bind(&TCPCommands::sockets, this, _1);
-    register_command(socket_func, "ls", socketParams, socketInfo);
+    register_command(socket_func, "ls", lsParams, lsInfo);
 
     auto accept_func = std::bind(&TCPCommands::accept, this, _1);
     register_command(accept_func, "a", acceptParams, acceptInfo);

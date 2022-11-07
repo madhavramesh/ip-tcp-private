@@ -59,7 +59,7 @@ class IPNode {
         bool disableInterface(int id);
 
         // Used to send a message from IP CLI or by TCPNode
-        void sendCLI(std::string address, const std::string& payload);
+        void sendCLI(std::string address, const std::string& payload, int protocol);
 
         // Returns all non-negative interfaces 
         // (interfaces that don't have same source and destination address)

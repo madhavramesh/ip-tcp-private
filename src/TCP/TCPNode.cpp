@@ -9,7 +9,9 @@
 #include <include/TCP/TCPNode.h>
 #include <include/repl/siphash.h>
 
-TCPNode::TCPNode(unsigned int port) : nextSockId(0), ipNode(std::make_shared<IPNode>(port)) {}
+TCPNode::TCPNode(unsigned int port) : nextSockId(0) {
+    ipNode = std::make_shared<IPNode>(port, std::make_shared<TCPNode>(*this));
+}
 
 /**
  * @brief Creates a new ListenSocket. 
@@ -32,12 +34,10 @@ int TCPNode::listen(std::string& address, unsigned int port) {
 
     // Adds socket to map of listener sockets
     if (listen_sd_table.find(port) == listen_sd_table.end()) {
-        listen_sd_table.insert(std::pair<int, ListenSocket>(port, listenerSock));
+        listen_sd_table.insert(std::pair<int, ListenSocket>(listenerSock.id, listenerSock));
         return listenerSock.id;
-    } else {
-        std::cerr << "error: cannot bind to port " << port << std::endl;
-        return -1;
-    }
+    } 
+    return -1;
 }
 
 /**
@@ -51,7 +51,7 @@ int TCPNode::accept(int socket, std::string& address) {
     // Grab listener socket, if it exists
     auto listenSockIt = listen_sd_table.find(socket);
     if (listenSockIt == listen_sd_table.end()) {
-        std::cerr << "error: socket does not exist" << std::endl;
+        std::cerr << "error: socket " << socket << " could not be found" << std::endl;
         return -1;
     }
 
@@ -69,6 +69,8 @@ int TCPNode::accept(int socket, std::string& address) {
     // Remove the socket from completed connections
     int clientSocketDescriptor = listenSock.completeConns.front();
     listenSock.completeConns.pop_front();
+
+    lk.unlock();
 
     ClientSocket& newClientSock = client_sd_table[clientSocketDescriptor];
 
@@ -134,13 +136,13 @@ int TCPNode::connect(std::string& address, unsigned int port) {
 
 void TCPNode::send(ClientSocket& clientSock, unsigned char sendFlags) {
     std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
-    tcpHeader->th_sport = htonl(clientSock.srcPort);
-    tcpHeader->th_dport = htonl(clientSock.destPort);
+    tcpHeader->th_sport = htons(clientSock.srcPort);
+    tcpHeader->th_dport = htons(clientSock.destPort);
     tcpHeader->th_seq = htonl(clientSock.seqNum);
     tcpHeader->th_ack = htonl(clientSock.ackNum);
     tcpHeader->th_flags = sendFlags;
-    tcpHeader->th_flags = htons(tcpHeader->th_flags);
-    tcpHeader->th_win = 0;
+    tcpHeader->th_win = htons(DEFAULT_WINDOW_SIZE);
+    tcpHeader->th_off = 5;
     tcpHeader->th_sum = 0; 
     tcpHeader->th_urp = 0;
 
@@ -153,7 +155,7 @@ void TCPNode::send(ClientSocket& clientSock, unsigned char sendFlags) {
     payload.resize(sizeof(struct tcphdr));
     memcpy(&payload[0], tcpHeader.get(), sizeof(struct tcphdr));
 
-    ipNode->sendCLI(clientSock.destAddr, payload); 
+    ipNode->sendCLI(clientSock.destAddr, payload, 6); 
 }
 
 TCPNode::AddrAndPort TCPNode::extractAddrPort(std::shared_ptr<struct ip> ipHeader, 
@@ -284,11 +286,13 @@ void TCPNode::receiveACK(std::shared_ptr<struct ip> ipHeader,
             clientSock.seqNum = ntohl(tcpHeader->th_ack);
             clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
     
-            // Add to completed connections
+            // Remove from incomplete connections
             listenSock.incompleteConns.erase(clientSocketIt);
+
+            // Add to completed connections
             std::unique_lock<std::mutex> lock(accept_mutex);
             listenSock.completeConns.push_front(clientSock.id);
-            accept_cond.notify_all();
+            accept_cond.notify_one();
         }
     }
 }
@@ -341,6 +345,7 @@ uint16_t TCPNode::computeTCPChecksum(
     memset(&ph, 0, sizeof(struct pseudo_header));
     ph.ip_src = virtual_ip_src;
     ph.ip_dst = virtual_ip_dst;
+    ph.zero = 0;
     ph.protocol = 6;  // TCP's assigned IP protocol number is 6
 
     // From RFC: "The TCP Length is the TCP header length plus the

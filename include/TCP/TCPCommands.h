@@ -1,10 +1,11 @@
 #pragma once
 
+#include <iostream>
+#include <memory>
+
 #include "include/repl/REPL.h"
 #include "include/IP/IPCommands.h"
 #include "include/TCP/TCPNode.h"
-#include <iostream>
-#include <memory>
 
 class TCPCommands : public IPCommands {
     public:

@@ -189,7 +189,7 @@ uint16_t IPNode::ip_sum(void *buffer, int len) {
  * @brief This send should be called from the CLI
  * 
  */
-void IPNode::sendCLI(std::string address, const std::string& payload) {
+void IPNode::sendCLI(std::string address, const std::string& payload, int protocol) {
     
     // Check if it exists in the routing table.
     // Useful for perhaps when routing table entry expires
@@ -219,7 +219,7 @@ void IPNode::sendCLI(std::string address, const std::string& payload) {
         return;
     }
 
-    send(address, nextHopAddr, payload, 0);
+    send(address, nextHopAddr, payload, protocol);
 }
 
 /**
