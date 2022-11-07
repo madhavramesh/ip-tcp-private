@@ -19,10 +19,10 @@ struct siphash_key {
     uint64_t key[2];
 };
 
-uint64_t siphash(char *data, size_t len, const siphash_key key);
+// uint64_t siphash(char *data, size_t len, const siphash_key key);
 
 uint64_t siphash_3u32(const uint32_t first, const uint32_t second, const uint32_t third, 
-                      const siphash_key key);
+                      const siphash_key& key);
 
 const unsigned long long SIPHASH_CONST_0 = 0x736f6d6570736575ULL;
 const unsigned long long SIPHASH_CONST_1 = 0x646f72616e646f6dULL;

@@ -15,7 +15,7 @@ include(Boost)
 # anytime new cpp file used in main, need to add here
 set(SOURCES src/TCP/main.cpp src/TCP/TCPCommands.cpp src/TCP/TCPNode.cpp
             src/IP/IPNode.cpp src/IP/IPCommands.cpp
-            src/repl/REPL.cpp )
+            src/repl/REPL.cpp src/repl/siphash.cpp)
 
 # add subdirectories
 add_subdirectory(utils)
