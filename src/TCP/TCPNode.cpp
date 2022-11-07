@@ -1,7 +1,9 @@
 #include <string>
 #include <random>
 #include <chrono>
-
+#include <thread>
+#include <condition_variable>
+#include <mutex>
 #include <netinet/tcp.h>
 
 #include <include/TCP/TCPNode.h>
@@ -57,6 +59,12 @@ int TCPNode::accept(int socket, std::string& address) {
 
     // Accept blocks until a connection is found
     while (listenSock.completeConns.empty());
+
+    // Accept blocks until connection is found (with condition variable)
+    std::unique_lock<std::mutex> lk(accept_mutex);
+    while (listenSock.completeConns.empty()) {
+        accept_cond.wait(lk);
+    }
 
     // Remove the socket from completed connections
     int clientSocketDescriptor = listenSock.completeConns.front();
@@ -278,7 +286,9 @@ void TCPNode::receiveACK(std::shared_ptr<struct ip> ipHeader,
     
             // Add to completed connections
             listenSock.incompleteConns.erase(clientSocketIt);
+            std::unique_lock<std::mutex> lock(accept_mutex);
             listenSock.completeConns.push_front(clientSock.id);
+            accept_cond.notify_all();
         }
     }
 }

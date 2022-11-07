@@ -6,7 +6,9 @@
 #include <string>
 #include <list>
 #include <memory>
-
+#include <thread>
+#include <condition_variable>
+#include <mutex>
 #include <boost/circular_buffer.hpp>
 
 #include <include/IP/IPNode.h>
@@ -137,6 +139,10 @@ class TCPNode {
 
     private:
         int nextSockId;
+
+        std::mutex accept_mutex;
+        std::condition_variable accept_cond; // for accept waiting for completed conns
+
         // socket descriptor -> Client Socket
         std::unordered_map<int, struct ClientSocket> client_sd_table;
         // socket descriptor -> Listen Socket

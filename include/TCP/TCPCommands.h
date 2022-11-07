@@ -47,4 +47,6 @@ class TCPCommands : public IPCommands {
 
     private:
         std::shared_ptr<TCPNode> tcpNode;
+
+        void accept_loop(int sockClient, int sockListener, std::string address);
 };

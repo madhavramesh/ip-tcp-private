@@ -7,7 +7,7 @@
 #include <vector>
 #include <fstream>
 #include <iomanip>
-
+#include <thread>
 #include "include/repl/colors.h"
 #include "third_party/bonsai.h"
 
@@ -101,6 +101,11 @@ void TCPCommands::sockets(std::string& args) {
     }
 }
 
+void TCPCommands::accept_loop(int sockClient, int sockListener, std::string address) {
+    while ((sockClient = tcpNode->accept(sockListener, address)) > 0) {
+        std::cout << "Accepted connection from " << address << std::endl;
+    }
+}
 
 // Accepts a connection on the given port
 void TCPCommands::accept(std::string& args) {
@@ -120,9 +125,9 @@ void TCPCommands::accept(std::string& args) {
     std::string address = "";
     int sockClient; 
     
-    while ((sockClient = tcpNode->accept(sockListener, address)) > 0) {
-        std::cout << "Accepted connection from " << address << std::endl;
-    }
+    // maybe use boost::ref() on address
+    std::thread accept_thread = std::thread(&TCPCommands::accept_loop, this, std::cref(sockClient), std::cref(sockListener), std::cref(address));
+    accept_thread.detach();
 }
 
 // Connects to the given ip and port
@@ -225,32 +230,32 @@ void TCPCommands::register_commands() {
     // Register commands
 
     auto socket_func = std::bind(&TCPCommands::sockets, this, _1);
-    register_command(socket_func, "socket", socketParams, socketInfo);
+    register_command(socket_func, "ls", socketParams, socketInfo);
 
     auto accept_func = std::bind(&TCPCommands::accept, this, _1);
-    register_command(accept_func, "accept", acceptParams, acceptInfo);
+    register_command(accept_func, "a", acceptParams, acceptInfo);
 
     auto connect_func = std::bind(&TCPCommands::connect, this, _1);
-    register_command(connect_func, "connect", connectParams, connectInfo);
+    register_command(connect_func, "c", connectParams, connectInfo);
 
     auto send_func = std::bind(&TCPCommands::send, this, _1);
-    register_command(send_func, "send", sendParams, sendInfo);
+    register_command(send_func, "s", sendParams, sendInfo);
 
     auto recv_func = std::bind(&TCPCommands::recv, this, _1);
-    register_command(recv_func, "recv", recvParams, recvInfo);
+    register_command(recv_func, "r", recvParams, recvInfo);
 
     auto shutdown_func = std::bind(&TCPCommands::shutdown, this, _1);
-    register_command(shutdown_func, "shutdown", shutdownParams, shutdownInfo);
+    register_command(shutdown_func, "sd", shutdownParams, shutdownInfo);
 
     auto close_func = std::bind(&TCPCommands::close, this, _1);
-    register_command(close_func, "close", closeParams, closeInfo);
+    register_command(close_func, "cl", closeParams, closeInfo);
 
     auto sendfile_func = std::bind(&TCPCommands::sendfile, this, _1);
-    register_command(sendfile_func, "sendfile", sendfileParams, sendfileInfo);
+    register_command(sendfile_func, "sf", sendfileParams, sendfileInfo);
 
     auto recvfile_func = std::bind(&TCPCommands::recvfile, this, _1);
-    register_command(recvfile_func, "recvfile", recvfileParams, recvfileInfo);
+    register_command(recvfile_func, "rf", recvfileParams, recvfileInfo);
 
     auto quit_func = std::bind(&TCPCommands::quit, this, _1);
-    register_command(quit_func, "quit", quitParams, quitInfo);
+    register_command(quit_func, "q", quitParams, quitInfo);
 }
