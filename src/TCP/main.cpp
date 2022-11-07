@@ -71,7 +71,7 @@ int main(int argc, char *argv[]) {
     // ------------------------------------------------------------------------- 
 
     // Set up REPL
-    IPCommands repl = IPCommands(std::shared_ptr<IPNode>(node->ipNode));
+    TCPCommands repl = TCPCommands(std::shared_ptr<TCPNode>(node));
     repl.register_commands();
 
     std::string text;

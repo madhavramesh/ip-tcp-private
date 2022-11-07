@@ -28,6 +28,20 @@ enum SocketState {
     CLOSED,
 };
 
+std::unordered_map<SocketState, std::string> SocketStateString = {
+    {LISTEN, "LISTEN"},
+    {SYN_RECV, "SYN_RECV"},
+    {SYN_SENT, "SYN_SENT"},
+    {ESTABLISHED, "ESTABLISHED"},
+    {FIN_WAIT1, "FIN_WAIT1"},
+    {FIN_WAIT2, "FIN_WAIT2"},
+    {TIME_WAIT, "TIME_WAIT"},
+    {CLOSING, "CLOSING"},
+    {CLOSE_WAIT, "CLOSE_WAIT"},
+    {LAST_ACK, "LAST_ACK"},
+    {CLOSED, "CLOSED"},
+};
+
 struct ClientSocket {
     int id;
     SocketState state;
@@ -110,6 +124,11 @@ class TCPNode {
         // any data not yet ACKed should still be retransmitted.
         // Some possible failures : EBADF
         void close(int socket);
+
+
+        // Helper function
+        std::vector<std::tuple<int, ClientSocket>> getClientSockets();
+        std::vector<std::tuple<int, ListenSocket>> getListenSockets();
 
     private:
         int nextSockId;

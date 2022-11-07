@@ -24,6 +24,8 @@ int TCPNode::listen(std::string& address, unsigned int port) {
     listenerSock.srcAddr = "";
     listenerSock.srcPort = port;
 
+    // #todo should try and check if address exists or if its nil/0
+
     // Adds socket to map of listener sockets
     if (listen_sd_table.find(port) == listen_sd_table.end()) {
         listen_sd_table.insert(std::pair<int, ListenSocket>(port, listenerSock));
@@ -223,6 +225,23 @@ void TCPNode::receive(
         }
     }
 }
+
+std::vector<std::tuple<int, ClientSocket>> TCPNode::getClientSockets() {
+    std::vector<std::tuple<int, ClientSocket>> clientSockets;
+    for (auto& clientSock : client_sd_table) {
+        clientSockets.push_back(std::make_tuple(clientSock.first, clientSock.second));
+    }
+    return clientSockets;
+}
+
+std::vector<std::tuple<int, ListenSocket>> TCPNode::getListenSockets() {
+    std::vector<std::tuple<int, ListenSocket>> listenSockets;
+    for (auto& listenSock : listen_sd_table) {
+        listenSockets.push_back(std::make_tuple(listenSock.first, listenSock.second));
+    }
+    return listenSockets;
+}
+
 
 // The TCP checksum is computed based on a "pesudo-header" that
 // combines the (virtual) IP source and destination address, protocol value,
