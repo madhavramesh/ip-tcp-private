@@ -163,6 +163,25 @@ uint16_t IPNode::ip_sum(void *buffer, int len) {
     return answer;
 }
 
+std::string IPNode::getNextHop(std::string& destAddr) {
+    std::string nextHopAddr;
+    int cost;
+    std::chrono::time_point<std::chrono::steady_clock> time;
+    {
+        std::scoped_lock lock(routingTableMtx);
+        // 2) Check last time updated
+        cleanUpRoutingTable(routingTable);
+
+        if (routingTable.find(address) == routingTable.end()) {
+            std::cerr << red << "Cannot send to " << address 
+                << ", it is an unreachable address." << color_reset << std::endl;
+            return;
+        }
+        std::tie(nextHopAddr, cost, time) = routingTable.at(address);
+    }
+    return nextHopAddr;
+}
+
 /**
  * @brief This send should be called from the CLI
  * 
@@ -296,28 +315,6 @@ struct RIPpacket IPNode::SHPR(std::string packetDestAddr, struct RIPpacket packe
 
     modifiedPacket.num_entries = modifiedPacket.entries.size();
     return packet;
-}
-
-std::string IPNode::getInterfaceAddress(std::string& destAddr) {
-    std::string nextHopAddr;
-    int cost;
-    std::chrono::time_point<std::chrono::steady_clock> time;
-    {
-        std::scoped_lock lock(routingTableMtx);
-        // 2) Check last time updated
-        cleanUpRoutingTable(routingTable);
-
-        if (routingTable.find(destAddr) == routingTable.end()) {
-            std::cerr << red << "Cannot send to " << destAddr 
-                << ", it is an unreachable address." << color_reset << std::endl;
-            return "";
-        }
-        std::tie(nextHopAddr, cost, time) = routingTable.at(destAddr);
-    }
-
-    auto [destPort, interfaceId] = ARPTable.at(nextHopAddr);
-    std::string srcAddr = interfaces[interfaceId].srcAddr;
-    return srcAddr;
 }
 
 /**

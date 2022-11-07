@@ -8,6 +8,7 @@
 #include <thread>
 #include <condition_variable>
 #include <mutex>
+#include <iostream>
 
 #include <include/TCP/socket.h>
 #include <include/IP/IPNode.h>
@@ -189,6 +190,8 @@ class TCPNode {
         );
 
         struct siphash_key generateSecretKey();
+
+        void tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 
         friend class IPNode;
 };

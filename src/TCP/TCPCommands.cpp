@@ -103,7 +103,7 @@ void TCPCommands::sockets(std::string& args) {
 
 void TCPCommands::accept_loop(int sockClient, int sockListener, std::string address) {
     while ((sockClient = tcpNode->accept(sockListener, address)) > 0) {
-        std::cout << "Accepted connection from " << address << std::endl;
+        std::cout << "accept on socket " << sockListener << " returned " << sockClient << std::endl;
     }
 }
 
@@ -170,7 +170,8 @@ void TCPCommands::connect(std::string& args) {
     if (sock < 0) {
         std::cerr << red << "Failed to connect to " << ip << ":" << port << color_reset << std::endl;
     }
-    std::cout << "Connected to " << ip << ":" << port << std::endl;
+    std::cout << "connect returned " << sock << std::endl;
+    // std::cout << "Connected to " << ip << ":" << port << std::endl;
 }
 
 // Sends data to the given socket

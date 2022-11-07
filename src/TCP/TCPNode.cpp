@@ -9,8 +9,12 @@
 #include <include/TCP/TCPNode.h>
 #include <include/repl/siphash.h>
 
-TCPNode::TCPNode(unsigned int port) : nextSockId(0) {
-    ipNode = std::make_shared<IPNode>(port, std::make_shared<TCPNode>(*this));
+TCPNode::TCPNode(unsigned int port) : nextSockId(0), ipNode(std::make_shared<IPNode>(port)) {
+
+    using namespace std::placeholders;
+
+    auto tcpFunc = std::bind(&TCPNode::tcpHandler, this, _1, _2);
+    ipNode->registerHandler(6, tcpFunc);
 }
 
 /**
@@ -31,13 +35,18 @@ int TCPNode::listen(std::string& address, unsigned int port) {
     listenerSock.srcPort = port;
 
     // #todo should try and check if address exists or if its nil/0
+    if (port < MIN_PORT) {
+        return -1;
+    }
 
     // Adds socket to map of listener sockets
-    if (listen_sd_table.find(port) == listen_sd_table.end()) {
-        listen_sd_table.insert(std::pair<int, ListenSocket>(listenerSock.id, listenerSock));
-        return listenerSock.id;
+    if (listen_port_table.find(port) != listen_port_table.end()) {
+        return -1;
     } 
-    return -1;
+
+    listen_sd_table.insert(std::pair<int, ListenSocket>(listenerSock.id, listenerSock));
+    listen_port_table[port].push_front(listenerSock.id);
+    return listenerSock.id;
 }
 
 /**
@@ -57,9 +66,6 @@ int TCPNode::accept(int socket, std::string& address) {
 
     ListenSocket& listenSock = listenSockIt->second;
 
-    // Accept blocks until a connection is found
-    while (listenSock.completeConns.empty());
-
     // Accept blocks until connection is found (with condition variable)
     std::unique_lock<std::mutex> lk(accept_mutex);
     while (listenSock.completeConns.empty()) {
@@ -75,15 +81,15 @@ int TCPNode::accept(int socket, std::string& address) {
     ClientSocket& newClientSock = client_sd_table[clientSocketDescriptor];
 
     // Add socket to client_sd table
-    int destPort = newClientSock.destPort;
-    if (client_port_table.find(destPort) == client_port_table.end()) {
+    int srcPort = newClientSock.srcPort;
+    if (client_port_table.find(srcPort) == client_port_table.end()) {
         // Create new entry
         // #todo remove this at end
         std::cerr << "this should never be reached!" << std::endl;
-        client_port_table[destPort].push_front(clientSocketDescriptor);
+        client_port_table[srcPort].push_front(clientSocketDescriptor);
     } else {
         // Update old entry
-        client_port_table.find(destPort)->second.push_back(clientSocketDescriptor);
+        client_port_table.find(srcPort)->second.push_back(clientSocketDescriptor);
     }
 
     // Set address
@@ -99,23 +105,16 @@ int TCPNode::connect(std::string& address, unsigned int port) {
     clientSock.destAddr = address;
     clientSock.destPort = port;
     
-    // Randomly select an interface to use as srcAddr
-    auto interfaces = ipNode->getInterfaces();
-    if (interfaces.empty()) {
+    // Source address is same as next hop address
+    clientSock.srcAddr = ipNode->getInterfaceAddress(address);
+    if (clientSock.srcAddr.empty()) {
         return -1;
     }
-    std::random_device rd;
-    std::mt19937 rd_gen(rd());
-    std::uniform_int_distribution<int> dis(0, interfaces.size() - 1);
-    int randomInterface = dis(rd_gen) % interfaces.size();
-
-    Interface interface = std::get<0>(interfaces[randomInterface]);
-    clientSock.srcAddr = interface.srcAddr;
 
     // Randomly select a port to use as srcPort
     // NOTE: Inefficient when large number of ports are being used
     int ephemeralPort = MIN_PORT;
-    while (client_port_table.count(port) || listen_port_table.count(port)) {
+    while (client_port_table.count(ephemeralPort) || listen_port_table.count(ephemeralPort)) {
         ephemeralPort = MIN_PORT + (rand() % (MAX_PORT - MIN_PORT));
     }
     clientSock.srcPort = ephemeralPort;
@@ -127,7 +126,7 @@ int TCPNode::connect(std::string& address, unsigned int port) {
     clientSock.ackNum = 0;
 
     client_sd_table.insert(std::make_pair(clientSock.id, clientSock));
-    client_port_table[clientSock.destPort].push_front(clientSock.id);
+    client_port_table[clientSock.srcPort].push_front(clientSock.id);
 
     // Create TCP Header and send SYN
     send(clientSock, TH_SYN);
@@ -193,12 +192,12 @@ void TCPNode::receiveSYN(std::shared_ptr<struct ip> ipHeader,
     auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
 
     // Check if listen socket exists
-    auto listenSocketsIt = listen_port_table.find(srcPort);
-    if (listenSocketsIt != listen_port_table.end()) {
+    auto listenSocketsIt = listen_port_table.find(destPort);
+    if (listenSocketsIt == listen_port_table.end()) {
         return;
     }
 
-    auto listenSocketIt = getListenSocket(srcPort, listenSocketsIt->second);
+    auto listenSocketIt = getListenSocket(destPort, listenSocketsIt->second);
     if (listenSocketIt == listenSocketsIt->second.end()) {
         return;
     }
@@ -212,13 +211,13 @@ void TCPNode::receiveSYN(std::shared_ptr<struct ip> ipHeader,
     clientSock.destPort = srcPort;
     clientSock.srcAddr = destAddr;
     clientSock.srcPort = destPort;
-    clientSock.seqNum = generateISN(clientSock.srcAddr, clientSock.srcPort, clientSock.destAddr, 
+    clientSock.seqNum = generateISN(clientSock.srcAddr, clientSock.srcPort, clientSock.destAddr,
                                      clientSock.destPort);
     clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
 
     // Add new socket to socket table
     client_sd_table.insert(std::make_pair(clientSock.id, clientSock));
-    client_port_table[clientSock.destPort].push_front(clientSock.id);
+    client_port_table[clientSock.srcPort].push_front(clientSock.id);
 
     // Add socket to corresponding listening socket's incomplete connections
     listenSock.incompleteConns.push_front(clientSock.id);
@@ -233,13 +232,14 @@ void TCPNode::receiveSYNACK(std::shared_ptr<struct ip> ipHeader,
     // Get 4-tuple (srcAddr, srcPort, destAddr, destPort)
     auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
 
-    if (!client_port_table.count(srcPort)) {
+    if (!client_port_table.count(destPort)) {
         return;
     }
 
     auto clientSocketIt = getClientSocket(srcAddr, srcPort, destAddr, destPort, 
-                                          client_port_table[srcPort]);
-    if (clientSocketIt == client_port_table[srcPort].end()) {
+                                          client_port_table[destPort]);
+    if (clientSocketIt == client_port_table[destPort].end()) {
+        std::cout << destPort << std::endl;
         return;
     }
 
@@ -264,12 +264,12 @@ void TCPNode::receiveACK(std::shared_ptr<struct ip> ipHeader,
     auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
 
     // Check if listen socket exists
-    auto listenSocketsIt = listen_port_table.find(srcPort);
-    if (listenSocketsIt != listen_port_table.end()) {
+    auto listenSocketsIt = listen_port_table.find(destPort);
+    if (listenSocketsIt == listen_port_table.end()) {
         return;
     }
 
-    auto listenSocketIt = getListenSocket(srcPort, listenSocketsIt->second);
+    auto listenSocketIt = getListenSocket(destPort, listenSocketsIt->second);
     if (listenSocketIt == listenSocketsIt->second.end()) {
         return;
     }
@@ -399,4 +399,12 @@ struct siphash_key TCPNode::generateSecretKey() {
         key.key[1] = dis(rd_gen);
     });
     return key;
+}
+
+void TCPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload) {
+    std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
+    memcpy(tcpHeader.get(), &payload[0], sizeof(tcphdr));
+
+    std::string remainingPayload = payload.substr(sizeof(tcphdr));
+    receive(ipHeader, tcpHeader, remainingPayload);
 }

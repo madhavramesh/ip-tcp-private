@@ -44,7 +44,6 @@ struct RIPpacket {
 class IPNode {
     public:
         IPNode(unsigned int port);
-        IPNode(unsigned int port, std::shared_ptr<TCPNode> tcpNode);
 
         // Populates relevant data structures for each interface
         void addInterface(
@@ -79,8 +78,6 @@ class IPNode {
         void registerHandler(int protocol, ProtocolHandler func);
 
     private:
-        std::shared_ptr<TCPNode> tcpNode;
-
         // Port that the socket will bind to
         unsigned int port;
         boost::asio::io_context my_io_context;
@@ -110,6 +107,8 @@ class IPNode {
         // Takes in destination and vector of RIP entries
         // Returns a vector of RIP entries that should be sent
         struct RIPpacket SHPR(std::string packetDestAddr, struct RIPpacket packet);
+
+        std::string getInterfaceAddress(std::string& destAddr);
 
         // Constructs IPv4 header and sends packet
         void send(
