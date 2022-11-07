@@ -41,6 +41,7 @@ struct ClientSocket {
 
 struct ListenSocket {
     int id;
+    SocketState state;
     std::string srcAddr;
     unsigned int srcPort;
     std::deque<int> completeConns;   // ESTABLISHED state
@@ -111,7 +112,6 @@ class TCPNode {
         void close(int socket);
 
     private:
-        std::shared_ptr<IPNode> ipNode;
         int nextSockId;
         // socket descriptor -> Client Socket
         std::unordered_map<int, struct ClientSocket> client_sd_table;
@@ -185,4 +185,8 @@ class TCPNode {
             std::string& destAddr,
             unsigned int destPort
         );
+
+        struct siphash_key generateSecretKey();
+
+        friend class IPNode;
 };

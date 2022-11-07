@@ -134,4 +134,6 @@ class IPNode {
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 
         void cleanUpRoutingTable(std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>> &routingTable);
+        
+        friend class TCPNode;
 };

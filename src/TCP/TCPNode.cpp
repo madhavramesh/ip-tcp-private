@@ -49,14 +49,16 @@ int TCPNode::accept(int socket, std::string& address) {
         return -1;
     }
 
-    ListenSocket listenSock = listenSockIt->second;
+    ListenSocket& listenSock = listenSockIt->second;
 
     // Accept blocks until a connection is found
     while (listenSock.completeConns.empty());
 
     // Remove the socket from completed connections
-    ClientSocket newClientSock = listenSock.completeConns.front();
+    int clientSocketDescriptor = listenSock.completeConns.front();
     listenSock.completeConns.pop_front();
+
+    ClientSocket& newClientSock = client_sd_table[clientSocketDescriptor];
 
     // Add socket to client_sd table
     int destPort = newClientSock.destPort;
@@ -64,10 +66,10 @@ int TCPNode::accept(int socket, std::string& address) {
         // Create new entry
         // #todo remove this at end
         std::cerr << "this should never be reached!" << std::endl;
-        client_port_table[destPort].push_front(newClientSock);
+        client_port_table[destPort].push_front(clientSocketDescriptor);
     } else {
         // Update old entry
-        client_port_table.find(destPort)->second.push_back(newClientSock);
+        client_port_table.find(destPort)->second.push_back(clientSocketDescriptor);
     }
 
     // Set address
@@ -91,7 +93,7 @@ int TCPNode::connect(std::string& address, unsigned int port) {
     std::random_device rd;
     std::mt19937 rd_gen(rd());
     std::uniform_int_distribution<> dis(0, interfaces.size() - 1);
-    int randomInterface = dis() % interfaces.size();
+    int randomInterface = dis(rd_gen) % interfaces.size();
 
     Interface interface = std::get<0>(interfaces[randomInterface]);
     clientSock.srcAddr = interface.srcAddr;
@@ -115,16 +117,17 @@ int TCPNode::connect(std::string& address, unsigned int port) {
 
     // Create TCP Header and send SYN
     send(clientSock, TH_SYN);
+    return nextSockId - 1;
 }
 
-void TCP::send(ClientSocket& clientSock, unsigned char sendFlags) {
+void TCPNode::send(ClientSocket& clientSock, unsigned char sendFlags) {
     std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
     tcpHeader->th_sport = htonl(clientSock.srcPort);
     tcpHeader->th_dport = htonl(clientSock.destPort);
     tcpHeader->th_seq = htonl(clientSock.seqNum);
     tcpHeader->th_ack = htonl(clientSock.ackNum);
     tcpHeader->th_flags = sendFlags;
-    tcpHeader->th_flags = htons(tpcHeader->th_flags);
+    tcpHeader->th_flags = htons(tcpHeader->th_flags);
     tcpHeader->th_win = 0;
     tcpHeader->th_sum = 0; 
     tcpHeader->th_urp = 0;
@@ -141,7 +144,7 @@ void TCP::send(ClientSocket& clientSock, unsigned char sendFlags) {
     ipNode->sendCLI(clientSock.destAddr, payload); 
 }
 
-void TCP::receive(
+void TCPNode::receive(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader,
     std::string& payload) {
@@ -157,13 +160,12 @@ void TCP::receive(
     if (listenSocketDescriptor == -1) {
         return;
     }
-    ListenSocket& listenSock = listen_sd_table[listenSockDescriptor];
+    ListenSocket& listenSock = listen_sd_table[listenSocketDescriptor];
 
     // Get 4-tuple (srcAddr, srcPort, destAddr, destPort)
-    std::string& srcAddr = ip::make_address_v4(ntohl(ipHeader->ip_src.s_addr));
+    std::string srcAddr = ip::make_address_v4(ntohl(ipHeader->ip_src.s_addr)).to_string();
     unsigned int srcPort = ntohs(tcpHeader->th_sport);
-    std::string& destAddr = ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr));
-    unsigned int destPort = ntohs(tcpHeader->th_dport);
+    std::string destAddr = ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr)).to_string();
 
     // SYN + ACK received
     if ((tcpHeader->th_flags & TH_SYN) && (tcpHeader->th_flags & TH_ACK)) {
@@ -171,17 +173,17 @@ void TCP::receive(
             return;
         }
 
-        int socketDescriptor = getClientSocket(srcAddr, srcPort, destAddr, destPort, 
-                                                     client_port_table[destPort]->second);
+        int clientSockDescriptor = getClientSocket(srcAddr, srcPort, destAddr, destPort, 
+                                               client_port_table[destPort]);
 
         // Send ACK
-        if (clientSocketDescriptor != -1) {
-            ClientSocket& clientSock = client_sd_table[socketDescriptor];
+        if (clientSockDescriptor != -1) {
+            ClientSocket& clientSock = client_sd_table[clientSockDescriptor];
             clientSock.state = SocketState::ESTABLISHED;
             clientSock.seqNum = ntohl(tcpHeader->th_ack);
             clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
 
-            send(clientSock, ACK);
+            send(clientSock, TH_ACK);
         }
     } 
     // SYN
@@ -199,7 +201,7 @@ void TCP::receive(
         clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
 
         client_sd_table.insert(std::make_pair(clientSock.id, clientSock));
-        client_port_table[clientSock.destPort].push_front(clientSock);
+        client_port_table[clientSock.destPort].push_front(clientSock.id);
 
         // Add socket to corresponding listening socket's incomplete connections
         listenSock.incompleteConns.push_front(clientSock.id);
@@ -214,7 +216,7 @@ void TCP::receive(
                                                listenSock.incompleteConns);
 
         if (socketDescriptor != -1) {
-            ClientSocket& clientSock = client_sd_table[socketDescriptor]
+            ClientSocket& clientSock = client_sd_table[socketDescriptor];
             clientSock.state = SocketState::ESTABLISHED;
             clientSock.seqNum = ntohl(tcpHeader->th_ack);
             clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
@@ -284,8 +286,26 @@ unsigned int TCPNode::generateISN(
     std::string& destAddr, 
     unsigned int destPort) {
 
-    std::random_device rd;
-    std::mt19937 isn_gen(rd());
-    std::uniform_int_distribution<unsigned int> isn_dis(0, UINT_MAX);
-    return isn_dis();
+    uint32_t first = ip::address_v4::from_string(srcAddr).to_ulong();
+    uint32_t second = ip::address_v4::from_string(destAddr).to_ulong();
+    uint32_t third = (uint32_t)(srcPort) << 16 | (uint32_t)(destPort);
+    struct siphash_key key = generateSecretKey();
+    uint64_t hashVal = siphash_3u32(first, second, third, key);
+
+    auto curTime = std::chrono::system_clock::now();
+    auto timeNano = std::chrono::duration_cast<std::chrono::nanoseconds>(curTime);
+    return hashVal + (timeNano >> 6);
+}
+
+struct siphash_key TCPNode::generateSecretKey() {
+    static siphash_key key;
+    static std::once_flag flag;
+    std::call_once(flag, [](){
+        std::random_device rd;
+        std::mt19937 rd_gen(rd());
+        std::uniform_int_distribution<> dis(0, UINT64_MAX);
+        key.key[0] = dis(rd_gen);
+        key.key[1] = dis(rd_gen);
+    });
+    return key;
 }
