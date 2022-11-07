@@ -7,6 +7,8 @@
 #include <list>
 #include <memory>
 
+#include <boost/circular_buffer.hpp>
+
 #include <include/IP/IPNode.h>
 
 class IPNode;
@@ -51,6 +53,9 @@ struct ClientSocket {
     unsigned int srcPort;
     unsigned int seqNum;
     unsigned int ackNum;
+
+    // boost::circular_buffer<char> sendBuffer();
+    // boost::circular_buffer<char> recvBuffer();
 };
 
 struct ListenSocket {
@@ -144,21 +149,46 @@ class TCPNode {
 
         void send(ClientSocket& clientSock, unsigned char sendFlags);
 
+        typedef std::tuple<std::string, unsigned int, std::string, unsigned int> AddrAndPort;
+        AddrAndPort extractAddrPort(
+            std::shared_ptr<struct ip> ipHeader,
+            std::shared_ptr<struct tcphdr> tcpHeader
+        );
+
         void receive(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader,
             std::string& payload
         );
 
+        void receiveSYN(
+            std::shared_ptr<struct ip> ipHeader, 
+            std::shared_ptr<struct tcphdr> tcpHeader
+        );
+
+        void receiveSYNACK(
+            std::shared_ptr<struct ip> ipHeader, 
+            std::shared_ptr<struct tcphdr> tcpHeader
+        );
+
+        void receiveACK(
+            std::shared_ptr<struct ip> ipHeader, 
+            std::shared_ptr<struct tcphdr> tcpHeader
+        );
+
         template <typename Iter>
-        int getClientSocket(
+        typename Iter::iterator getClientSocket(
             std::string& srcAddr,
             unsigned int srcPort,
             std::string& destAddr,
             unsigned int destPort,
-            Iter& it) {
-            int clientSocketDescriptor = -1;
-            for (const auto& socketDescriptor : it) {
+            Iter& iterable) {
+            static_assert(std::is_same<typename Iter::value_type, int>::value, 
+                          "Iterable must contain ints");
+
+            typename Iter::iterator it;
+            for (it = iterable.begin(); it != iterable.end(); it++) {
+                int socketDescriptor = *it;
                 if (!client_sd_table.count(socketDescriptor)) {
                     continue;
                 }
@@ -166,29 +196,30 @@ class TCPNode {
                 // Check that (srcAddr, srcPort, destAddr, destPort) match
                 ClientSocket& clientSock = client_sd_table[socketDescriptor];
                 if (clientSock.srcAddr == destAddr && clientSock.srcPort == destPort && 
-                        clientSock.destAddr == srcAddr && clientSock.destPort == srcPort && 
-                        clientSock.state == SocketState::SYN_RECV) {
-                    clientSocketDescriptor = socketDescriptor;
+                        clientSock.destAddr == srcAddr && clientSock.destPort == srcPort) {
                     break;
                 }
             }
-            return clientSocketDescriptor;
+            return it;
         };
 
         template <typename Iter>
-        int getListenSocket(unsigned int destPort, Iter& it) {
-            int listenSocketDescriptor = -1;
-            for (const auto& socketDescriptor : it) {
+        typename Iter::iterator getListenSocket(unsigned int destPort, Iter& iterable) {
+            static_assert(std::is_same<typename Iter::value_type, int>::value, 
+                          "Iterable must contain ints");
+
+            typename Iter::iterator it;
+            for (it = iterable.begin(); it != iterable.end(); it++) {
+                int socketDescriptor = *it;
                 if (!listen_sd_table.count(socketDescriptor)) {
                     continue;
                 }
 
                 if (listen_sd_table[socketDescriptor].srcPort == destPort) {
-                    listenSocketDescriptor = socketDescriptor;
                     break;
                 }
             }
-            return listenSocketDescriptor;
+            return it;
         };
 
         uint16_t computeTCPChecksum(
