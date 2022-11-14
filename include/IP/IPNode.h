@@ -58,7 +58,7 @@ class IPNode {
         bool disableInterface(int id);
 
         // Used to send a message from IP CLI or by TCPNode
-        void sendCLI(std::string address, const std::string& payload, int protocol);
+        void sendMsg(std::string destAddr, std::string srcAddr, const std::string& payload, int protocol);
 
         // Returns all non-negative interfaces 
         // (interfaces that don't have same source and destination address)
@@ -101,18 +101,17 @@ class IPNode {
             uint16_t type, 
             std::unordered_map<std::string, std::tuple<std::string, int, std::chrono::time_point<std::chrono::steady_clock>>>& routes);
 
-        void sendRIPpacket(std::string address, struct RIPpacket packet);
+        void sendRIPpacket(std::string destAddr, struct RIPpacket packet);
 
         // Implements split horizon with poison reverse
         // Takes in destination and vector of RIP entries
         // Returns a vector of RIP entries that should be sent
         struct RIPpacket SHPR(std::string packetDestAddr, struct RIPpacket packet);
 
-        std::string getInterfaceAddress(std::string& destAddr);
-
         // Constructs IPv4 header and sends packet
         void send(
-            std::string address, 
+            std::string destAddr, 
+            std::string srcAddr, 
             std::string nextHopAddr,
             const std::string& payload,
             int protocol);

@@ -105,11 +105,18 @@ int TCPNode::connect(std::string& address, unsigned int port) {
     clientSock.destAddr = address;
     clientSock.destPort = port;
     
-    // Source address is same as next hop address
-    clientSock.srcAddr = ipNode->getInterfaceAddress(address);
-    if (clientSock.srcAddr.empty()) {
+    // Randomly select an interface to use as srcAddr
+    auto interfaces = ipNode->getInterfaces();
+    if (interfaces.empty()) {
         return -1;
     }
+    std::random_device rd;
+    std::mt19937 rd_gen(rd());
+    std::uniform_int_distribution<int> dis(0, interfaces.size() - 1);
+    int randomInterface = dis(rd_gen) % interfaces.size();
+
+    Interface interface = std::get<0>(interfaces[randomInterface]);
+    clientSock.srcAddr = interface.srcAddr;
 
     // Randomly select a port to use as srcPort
     // NOTE: Inefficient when large number of ports are being used
@@ -154,7 +161,7 @@ void TCPNode::send(ClientSocket& clientSock, unsigned char sendFlags) {
     payload.resize(sizeof(struct tcphdr));
     memcpy(&payload[0], tcpHeader.get(), sizeof(struct tcphdr));
 
-    ipNode->sendCLI(clientSock.destAddr, payload, 6); 
+    ipNode->sendMsg(clientSock.destAddr, clientSock.srcAddr, payload, 6); 
 }
 
 TCPNode::AddrAndPort TCPNode::extractAddrPort(std::shared_ptr<struct ip> ipHeader, 
@@ -239,7 +246,6 @@ void TCPNode::receiveSYNACK(std::shared_ptr<struct ip> ipHeader,
     auto clientSocketIt = getClientSocket(srcAddr, srcPort, destAddr, destPort, 
                                           client_port_table[destPort]);
     if (clientSocketIt == client_port_table[destPort].end()) {
-        std::cout << destPort << std::endl;
         return;
     }
 

@@ -164,40 +164,54 @@ uint16_t IPNode::ip_sum(void *buffer, int len) {
 }
 
 /**
- * @brief This send should be called from the CLI
+ * @brief This send should be called from the CLI or from TCP Node
  * 
  */
-void IPNode::sendCLI(std::string address, const std::string& payload, int protocol) {
+void IPNode::sendMsg(std::string destAddr, std::string srcAddr, const std::string& payload, 
+        int protocol) {
     
-    // Check if it exists in the routing table.
-    // Useful for perhaps when routing table entry expires
+    // Check if destination address exists in the routing table
+    // Useful if routing table entry expires
     std::string nextHopAddr;
     int cost;
     std::chrono::time_point<std::chrono::steady_clock> time;
     {
         std::scoped_lock lock(routingTableMtx);
-        // 2) Check last time updated
+        // Check last time updated
         cleanUpRoutingTable(routingTable);
 
-        if (routingTable.find(address) == routingTable.end()) {
-            std::cerr << red << "Cannot send to " << address 
+        if (routingTable.find(destAddr) == routingTable.end()) {
+            std::cerr << red << "Cannot send to " << destAddr
                 << ", it is an unreachable address." << color_reset << std::endl;
             return;
         }
-        std::tie(nextHopAddr, cost, time) = routingTable.at(address);
+        std::tie(nextHopAddr, cost, time) = routingTable.at(destAddr);
     }
-    // auto [nextHopAddr, cost, time] = routingTable[address];
-    int interfaceId = std::get<1>(ARPTable.at(nextHopAddr));
+
+    // Check if source address belongs to one of the interfaces on this node
+    bool srcAddrExists = false;
+    if (ARPTable.count(srcAddr)) {
+        auto [srcPort, srcInterfaceId] = ARPTable[srcAddr];
+        if (srcPort == port) {
+            srcAddrExists = true;
+        }
+    }
 
     // Check if interface has been disabled
     // Useful if a user takes down a route
-    if (!interfaces[interfaceId].up) {
-        std::cerr << red << "Cannot send to " << address 
+    int nextInterfaceId = std::get<1>(ARPTable.at(nextHopAddr));
+    if (!interfaces[nextInterfaceId].up) {
+        std::cerr << red << "Cannot send to " << destAddr 
             << ", it is an unreachable address." << color_reset << std::endl;
         return;
     }
 
-    send(address, nextHopAddr, payload, protocol);
+    // If source address doesn't belong to one of the interfaces on node,
+    // set it to source address of interface leading to next hop address
+    if (!srcAddrExists) {
+        srcAddr = interfaces[nextInterfaceId].srcAddr;
+    }
+    send(destAddr, srcAddr, nextHopAddr, payload, protocol);
 }
 
 /**
@@ -223,14 +237,14 @@ RIPpacket IPNode::createRIPpacket(uint16_t type,
     return packet;
 }
 
-void IPNode::sendRIPpacket(std::string address, struct RIPpacket packet) {
-    int interfaceId = std::get<1>(ARPTable.at(address));
+void IPNode::sendRIPpacket(std::string destAddr, struct RIPpacket packet) {
+    int interfaceId = std::get<1>(ARPTable.at(destAddr));
     // Check if interface has been disabled
     if (!interfaces[interfaceId].up) {
         return;
     }
 
-    packet = SHPR(address, packet);
+    packet = SHPR(destAddr, packet);
 
     packet.command = htons(packet.command);
     packet.num_entries = htons(packet.num_entries);
@@ -256,7 +270,8 @@ void IPNode::sendRIPpacket(std::string address, struct RIPpacket packet) {
     // copy rest
     memcpy((char *)payload.data() + front_size, &packet.entries[0], total_size - front_size);
 
-    send(address, address, payload, 200);
+    std::string srcAddr = interfaces[interfaceId].srcAddr;
+    send(destAddr, srcAddr, destAddr, payload, 200);
 }
 
 /**
@@ -298,40 +313,18 @@ struct RIPpacket IPNode::SHPR(std::string packetDestAddr, struct RIPpacket packe
     return packet;
 }
 
-std::string IPNode::getInterfaceAddress(std::string& destAddr) {
-    std::string nextHopAddr;
-    int cost;
-    std::chrono::time_point<std::chrono::steady_clock> time;
-    {
-        std::scoped_lock lock(routingTableMtx);
-        // 2) Check last time updated
-        cleanUpRoutingTable(routingTable);
-
-        if (routingTable.find(destAddr) == routingTable.end()) {
-            std::cerr << red << "Cannot send to " << destAddr 
-                << ", it is an unreachable address." << color_reset << std::endl;
-            return "";
-        }
-        std::tie(nextHopAddr, cost, time) = routingTable.at(destAddr);
-    }
-
-    auto [destPort, interfaceId] = ARPTable.at(nextHopAddr);
-    std::string srcAddr = interfaces[interfaceId].srcAddr;
-    return srcAddr;
-}
-
 /**
  * Sends message (from CLI)
 */
 void IPNode::send(
-    std::string address, 
+    std::string destAddr, 
+    std::string srcAddr,
     std::string nextHopAddr,
     const std::string& payload,
     int protocol) 
 {   
-    auto [destPort, interfaceId] = ARPTable.at(nextHopAddr);
-    std::string srcAddr = interfaces[interfaceId].srcAddr;
-    
+    unsigned int destPort = std::get<0>(ARPTable.at(nextHopAddr));
+
     // Build IPv4 header
     std::shared_ptr<struct ip> ip_header = std::make_shared<struct ip>();
 
@@ -345,7 +338,7 @@ void IPNode::send(
     ip_header->ip_p      = protocol;    // ipv6/default
     ip_header->ip_sum    = 0;    // checksum should be zeroed out b4 calc
     ip_header->ip_src    = {inet_addr(srcAddr.c_str())};
-    ip_header->ip_dst    = {inet_addr(address.c_str())};
+    ip_header->ip_dst    = {inet_addr(destAddr.c_str())};
 
     ip_header->ip_sum = ip_sum(ip_header.get(), ip_header->ip_hl * 4);
 

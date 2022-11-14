@@ -123,7 +123,7 @@ void IPCommands::send(std::string& args) {
         return;
     }
 
-    node->sendCLI(addr, payload, 0);
+    node->sendMsg(addr, "", payload, 0);
 }
 
 void IPCommands::up(std::string& args) {
