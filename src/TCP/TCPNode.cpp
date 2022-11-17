@@ -80,17 +80,17 @@ int TCPNode::accept(int socket, std::string& address) {
 
     ClientSocket& newClientSock = client_sd_table[clientSocketDescriptor];
 
-    // Add socket to client_sd table
-    int srcPort = newClientSock.srcPort;
-    if (client_port_table.find(srcPort) == client_port_table.end()) {
-        // Create new entry
-        // #todo remove this at end
-        std::cerr << "this should never be reached!" << std::endl;
-        client_port_table[srcPort].push_front(clientSocketDescriptor);
-    } else {
-        // Update old entry
-        client_port_table.find(srcPort)->second.push_back(clientSocketDescriptor);
-    }
+    // // Add socket to client_sd table
+    // int srcPort = newClientSock.srcPort;
+    // if (client_port_table.find(srcPort) == client_port_table.end()) {
+    //     // Create new entry
+    //     // #todo remove this at end
+    //     std::cerr << "this should never be reached!" << std::endl;
+    //     client_port_table[srcPort].push_front(clientSocketDescriptor);
+    // } else {
+    //     // Update old entry
+    //     client_port_table.find(srcPort)->second.push_back(clientSocketDescriptor);
+    // }
 
     // Set address
     address = newClientSock.destAddr; // #todo, double check if dst or src, figure out why this is needed
@@ -101,6 +101,7 @@ int TCPNode::accept(int socket, std::string& address) {
 int TCPNode::connect(std::string& address, unsigned int port) {
     ClientSocket clientSock;
     clientSock.id = nextSockId++;
+    clientSock.activeOpen = true;
     clientSock.state = SocketState::SYN_SENT;
     clientSock.destAddr = address;
     clientSock.destPort = port;
@@ -175,10 +176,97 @@ TCPNode::AddrAndPort TCPNode::extractAddrPort(std::shared_ptr<struct ip> ipHeade
     return std::make_tuple(srcAddr, srcPort, destAddr, destPort);
 }
 
+void handleClient(
+    std::shared_ptr<struct ip> ipHeader, 
+    std::shared_ptr<struct tcphdr> tcpHeader, 
+    int socketId) {
+        
+        auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
+        ClientSocket socket = client_sd_table[socketId]; // hopefully it exists
+
+        // 1) Assume initials are valid
+
+        // 2) Check the reset bit
+        bool resetBitSet = tcpHeader->th_flags & TH_RST;
+
+        if (resetBitSet && 
+        ((socket.state == SocketState.TIME_WAIT) || (socket.state == SocketState.SYN_RECV))) {
+            // If initiated with passive open, return back to listen state
+            client_port_table[destPort].erase(socketId);
+            client_sd_table.erase(socketId);
+
+            // # potentially consider active vs passive open
+
+            return;
+        }
+        else if ((socket.state == SocketState.CLOSE_WAIT) && resetBitSet) {
+            // # finish later
+
+            return;
+        }
+
+        // 3) Don't need to check security
+
+        // 4) Check SYN bit
+        bool synBitSet = tcpHeader->th_flags & TH_SYN;
+
+        if (synBitSet && (socket.state == SocketState.SYN_RECV)) {
+            // Check if passive OPEN 
+            if (!socket.activeOpen) {
+                // Return back to listen state
+                client_port_table[destPort].erase(socketId);
+                client_sd_table.erase(socketId);
+                return;
+            }
+        }
+
+        else if (synBitSet && (socket.state == SocketState.TIME_WAIT)) {
+            // If syn in window, it is an error
+            // send reset
+            send(socket, TH_RST);
+
+            // Send reset response to user
+            // Flush
+            // by making read/send return 0
+
+
+            return;
+        }
+}
+
 void TCPNode::receive(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader,
     std::string& payload) {
+
+        // Find socket
+        auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
+        
+        bool inClientTable = true;
+        // Check if in client socket table
+        if (!client_port_table.count(destPort)) {
+            inClientTable = false;
+        }
+        auto clientSocketIt = getClientSocket(srcAddr, srcPort, destAddr, destPort, 
+                                            client_port_table[destPort]);
+        if (clientSocketIt == client_port_table[destPort].end()) {
+            inClientTable = false;
+        }
+
+        if (inClientTable) {
+            // Handle client
+        }
+
+        if (foundInClientTable()) {
+            handleClient()
+        } else if (foundInListenerTable()) {
+            handleListenerCase()
+        } else {
+            // Handle CLOSED state
+            // printError
+        }
+        
+    
 
     if ((tcpHeader->th_flags & TH_SYN) && (tcpHeader->th_flags & TH_ACK)) {
         // SYN + ACK received
@@ -213,6 +301,7 @@ void TCPNode::receiveSYN(std::shared_ptr<struct ip> ipHeader,
     // Create new socket
     ClientSocket clientSock;
     clientSock.id = nextSockId++;
+    clientSock.activeOpen = false;
     clientSock.state = SocketState::SYN_RECV;
     clientSock.destAddr = srcAddr;
     clientSock.destPort = srcPort;

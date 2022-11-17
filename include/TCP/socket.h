@@ -39,6 +39,7 @@ static std::unordered_map<SocketState, std::string> SocketStateString = {
 
 struct ClientSocket {
     int id;
+    bool activeOpen;
     SocketState state;
     std::string destAddr;
     unsigned int destPort;

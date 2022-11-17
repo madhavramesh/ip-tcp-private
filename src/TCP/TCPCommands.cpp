@@ -193,6 +193,35 @@ void TCPCommands::send(std::string& args) {
     std::string sockID = parsedArgs[0];
     std::string payload = args.substr(spaceIdx + 1);
     std::cout << "your payload would be " << payload << std::endl;
+
+    // #TODO make sure send socket is valid / open 
+
+    // #TODO check not listener socket
+
+    // #TODO if in syn-received state, queue send messages
+
+    // #TODO if in closed wait state, segmentize buffer and send with ack
+
+    // #TODO if in listen state, convert to syn-sent state
+
+
+
+    /** 3.17.7 SEGMENT ARRIVES
+     * 
+     * #TODO
+     * - if received rst / other connection is closed, etc. 
+     * - refer to 3.17.7.1, send a reset if the state does not exist
+     * 
+     * - if in LISTEN state, do nothing is RST
+     * - if receive an ACK and no corresponding socket in incomplete queue, send RST
+     * - if SYN, queue for processing + update ack 
+     * - otherwise, just drop packet
+     * 
+     * in SYN-SENT state
+     * - make sure ACK is between ISN/unacked and last sent
+     * - if RST, drop segment and enter closed
+     * - if SYN, update our syn.una and syn.next
+     */
 }
 
 void TCPCommands::recv(std::string& args) {
@@ -200,6 +229,15 @@ void TCPCommands::recv(std::string& args) {
         std::cerr << red << "usage: " << "recv " << recvParams << color_reset << std::endl;
         return;
     }
+
+    // #TODO if socket does not exist, print error message
+
+    // #TODO check if need to block
+
+    // #TODO if in closed-wait state, read calls should return anything in buffer
+    // because other side won't send more messages
+
+    // #TODO if in timed wait state, return "error: connection closing"
 }
 
 void TCPCommands::shutdown(std::string& args) {
@@ -214,6 +252,17 @@ void TCPCommands::close(std::string& args) {
         std::cerr << red << "usage: " << "close " << closeParams << color_reset << std::endl;
         return;
     }
+
+    /**
+     * #TODO
+     * - if no access to socket, throw error
+     * - if in syn-received states, don't close until all things needed to be sent are sent
+     * i.e., last sent = last written
+     * - if established, send rest of buffer, send fin, enter fin-wait-1
+     * - if in fin-wait-2, don't send out anything
+     * - if in closed-wait, do same thing as in established
+     * - if in timed-wait, return an error
+     */
 }
 
 void TCPCommands::sendfile(std::string& args) {
