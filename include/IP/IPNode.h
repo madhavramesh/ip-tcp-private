@@ -15,10 +15,6 @@
 
 using namespace boost::asio;
 
-// need this here to avoid circular dependency?
-// https://stackoverflow.com/questions/625799/resolve-build-errors-due-to-circular-dependency-amongst-classes
-class TCPNode; 
-
 const int MAX_IP_PACKET_SIZE = 1400;
 
 typedef std::function<void(std::shared_ptr<struct ip>, std::string&)> ProtocolHandler;
@@ -127,7 +123,6 @@ class IPNode {
         void genericHandler(
             boost::array<char, MAX_IP_PACKET_SIZE> receiveBuffer, 
             size_t receivedBytes, boost::asio::ip::udp::endpoint receiverEndpoint);
-        void tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
         void testHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
         void ripHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 

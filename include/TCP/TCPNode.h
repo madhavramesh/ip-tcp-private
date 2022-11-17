@@ -15,6 +15,9 @@
 
 class IPNode;
 
+const int MIN_PORT = 1024;
+const int MAX_PORT = 65535;
+
 const int DEFAULT_WINDOW_SIZE = 65535;
 
 class TCPNode {
@@ -86,6 +89,7 @@ class TCPNode {
 
     private:
         int nextSockId;
+        int nextEphemeral;
 
         std::mutex accept_mutex;
         std::condition_variable accept_cond; // for accept waiting for completed conns
@@ -113,6 +117,10 @@ class TCPNode {
             std::shared_ptr<struct tcphdr> tcpHeader,
             std::string& payload
         );
+
+        void receive(
+
+        )
 
         void receiveSYN(
             std::shared_ptr<struct ip> ipHeader, 

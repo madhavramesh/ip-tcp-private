@@ -9,7 +9,7 @@
 #include <include/TCP/TCPNode.h>
 #include <include/repl/siphash.h>
 
-TCPNode::TCPNode(unsigned int port) : nextSockId(0), ipNode(std::make_shared<IPNode>(port)) {
+TCPNode::TCPNode(unsigned int port) : nextSockId(0), nextEphemeral(minPort), ipNode(std::make_shared<IPNode>(port)) {
 
     using namespace std::placeholders;
 
@@ -120,9 +120,18 @@ int TCPNode::connect(std::string& address, unsigned int port) {
 
     // Randomly select a port to use as srcPort
     // NOTE: Inefficient when large number of ports are being used
-    int ephemeralPort = MIN_PORT;
-    while (client_port_table.count(ephemeralPort) || listen_port_table.count(ephemeralPort)) {
-        ephemeralPort = MIN_PORT + (rand() % (MAX_PORT - MIN_PORT));
+
+    int count = MAX_PORT - MIN_PORT + 1;
+    while (count > 0) {
+        if (!client_port_table.count(nextEphemeral) && !listen_port_table.count(nextEphemeral)) {
+            break;
+        }
+        nextEphemeral = ((nextEphemeral + 1) % (MAX_PORT - MIN_PORT)) + MIN_PORT;
+        count--;
+    }
+
+    if (count == 0) {
+        return -1;
     }
     clientSock.srcPort = ephemeralPort;
 

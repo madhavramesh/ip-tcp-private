@@ -6,9 +6,6 @@
 
 #include <boost/circular_buffer.hpp>
 
-const int MIN_PORT = 1024;
-const int MAX_PORT = 65535;
-
 enum SocketState {
     LISTEN,
     SYN_RECV,
@@ -59,3 +56,4 @@ struct ListenSocket {
     std::deque<int> completeConns;   // ESTABLISHED state
     std::deque<int> incompleteConns; // SYN-RECEIVED state
 };
+
