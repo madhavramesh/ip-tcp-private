@@ -6,6 +6,7 @@
 #include <mutex>
 #include <netinet/tcp.h>
 
+#include <include/TCP/CircularBuffer.h>
 #include <include/TCP/TCPNode.h>
 #include <include/repl/siphash.h>
 
@@ -136,29 +137,43 @@ int TCPNode::connect(std::string& address, unsigned int port) {
     }
     clientSock.srcPort = ephemeralPort;
 
+    // Set appropriate windows 
+    clientSock.sendWnd = RECV_WINDOW_SIZE;
+    clientSock.sendWl1 = 0;
+    clientSock.sendWl2 = 0;
+
     // Generate ISN 
-    unsigned int isn = generateISN(clientSock.srcAddr, clientSock.srcPort, clientSock.destAddr, 
-                                    clientSock.destPort);
-    clientSock.seqNum = isn;
-    clientSock.ackNum = 0;
+    clientSock.iss = generateISN(clientSock.srcAddr, clientSock.srcPort, clientSock.destAddr, 
+                                 clientSock.destPort);
+    clientSock.irs = 0;
+    clientSock.maxRetransmits = MAX_RETRANSMITS;
+    clientSock.unAck = clientSock.iss;
+    clientSock.sendNext = clientSock.iss + 1;
+    
+    // Set up send and receive buffers
+    clientSock.recvBuffer = TCPCircularBuffer(RECV_WINDOW_SIZE);
 
     client_sd_table.insert(std::make_pair(clientSock.id, clientSock));
     client_port_table[clientSock.srcPort].push_front(clientSock.id);
 
     // Create TCP Header and send SYN
-    send(clientSock, TH_SYN);
+    send(clientSock, TH_SYN, clientSock.iss, 0, "");
     return nextSockId - 1;
 }
 
-void TCPNode::send(ClientSocket& clientSock, unsigned char sendFlags) {
+void TCPNode::send(ClientSocket& clientSock, 
+        unsigned char sendFlags, int seqNum, int ackNum, std::string payload) {
     // #todo handle splitting packets i.e. less than max tcp packet size
+
     std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
     tcpHeader->th_sport = htons(clientSock.srcPort);
     tcpHeader->th_dport = htons(clientSock.destPort);
-    tcpHeader->th_seq = htonl(clientSock.seqNum);
-    tcpHeader->th_ack = htonl(clientSock.ackNum);
+    tcpHeader->th_seq = htonl(seqNum);
+    tcpHeader->th_ack = htonl(ackNum);
     tcpHeader->th_flags = sendFlags;
-    tcpHeader->th_win = htons(DEFAULT_WINDOW_SIZE);
+
+    int windowSize = clientSock.recvBuffer.getWindowSize();
+    tcpHeader->th_win = htons(windowSize);
     tcpHeader->th_off = 5;
     tcpHeader->th_sum = 0; 
     tcpHeader->th_urp = 0;
@@ -166,13 +181,66 @@ void TCPNode::send(ClientSocket& clientSock, unsigned char sendFlags) {
     // Compute checksum
     uint32_t srcIp = inet_addr(clientSock.srcAddr.c_str());
     uint32_t destIp = inet_addr(clientSock.destAddr.c_str());
-    std::string payload = "";
     tcpHeader->th_sum = computeTCPChecksum(srcIp, destIp, tcpHeader, payload);
 
-    payload.resize(sizeof(struct tcphdr));
-    memcpy(&payload[0], tcpHeader.get(), sizeof(struct tcphdr));
+    std::string newPayload = "";
+    newPayload.resize(sizeof(struct tcphdr));
+    memcpy(&newPayload[0], tcpHeader.get(), sizeof(struct tcphdr));
+    memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
 
-    ipNode->sendMsg(clientSock.destAddr, clientSock.srcAddr, payload, 6); 
+    // Call IP's send method to send packet
+    ipNode->sendMsg(clientSock.destAddr, clientSock.srcAddr, newPayload, TCP_PROTOCOL_NUMBER); 
+    if (tcpHeader->th_flags & (TH_SYN | TH_FIN)) {
+        clientSock.sendNext++;
+    }
+    clientSock.sendNext += payload.size();
+
+    // Add to retranmission queue
+    struct RetransmitPacket retransmitPacket;
+    retransmitPacket.tcpHeader = tcpHeader;
+    retransmitPacket.payload = payload;
+    retransmitPacket.time = std::chrono::steady_clock::now();
+
+    clientSock.retransmissionQueue.push_back(retransmitPacket);
+}
+
+void TCPNode::retransmitPackets() {
+    while (true) {
+        auto curTime = std::chrono::steady_clock::now();
+        for (auto& [id, clientSock] : client_sd_table) {
+            for (auto it = clientSock.retranmissionQueue.begin(); 
+                    it != clientSock.retransmissionQueue.end(); it++) {
+
+                auto timeDiff = std::chrono::duration_cast<std::seconds>(curTime - it->retransmitTime).count();
+                if (timeDiff > it->retransmitInterval) {
+                    // Exponential backoff for retranmission
+                    it->reTransmitInterval *= 2;
+                    it->numRetransmits++;
+
+                    if (it->numRetransmits > clientSock.maxRetransmits) {
+                        // Close socket
+                        clientSock.retransmissionQueue.erase(it);
+                        client_port_table[clientSock.destPort].erase(id);
+                        client_sd_table.erase(id);
+                        return;
+                    }
+                    it->retransmitTime = std::chrono::steady_clock::now();
+
+                    // Retransmit packet if receiver window allows
+                    unsigned int segEnd = (it->tcpHeader->th_seq + it->payload.size()) - 1;
+                    if (segEnd < clientSock.unAck + clientSock.sendWnd) {
+                        std::string newPayload = "";
+                        newPayload.resize(sizeof(struct tcphdr));
+                        memcpy(&newPayload[0], tcpHeader.get(), sizeof(struct tcphdr));
+                        memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
+
+                        ipNode->sendMsg(clientSock.destAddr, clientSock.srcAddr, newPayload, 
+                                        TCP_PROTOCOL_NUMBER); 
+                    }
+                }
+            }
+        }
+    }
 }
 
 TCPNode::AddrAndPort TCPNode::extractAddrPort(std::shared_ptr<struct ip> ipHeader, 
@@ -373,7 +441,6 @@ void TCPNode::receive(
         tcpHeader->th_seq = ntohl(tcpHeader->th_seq);
         tcpHeader->th_ack = ntohl(tcpHeader->th_ack);
         tcpHeader->th_win = ntohs(tcpHeader->th_win);
-        
 
         // Find socket
         auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
@@ -443,9 +510,11 @@ void TCPNode::receiveSYN(std::shared_ptr<struct ip> ipHeader,
     clientSock.destPort = srcPort;
     clientSock.srcAddr = destAddr;
     clientSock.srcPort = destPort;
-    clientSock.seqNum = generateISN(clientSock.srcAddr, clientSock.srcPort, clientSock.destAddr,
+    clientSock.iss = generateISN(clientSock.srcAddr, clientSock.srcPort, clientSock.destAddr,
                                      clientSock.destPort);
-    clientSock.ackNum = tcpHeader->th_seq + 1;
+    clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
+    clientSock.sendBuffer = TCPCircularBuffer(SEND_WINDOW_SIZE);
+    clientSock.recvBuffer = TCPCircularBuffer(RECV_WINDOW_SIZE);
 
     // Add new socket to socket table
     client_sd_table.insert(std::make_pair(clientSock.id, clientSock));
@@ -455,7 +524,7 @@ void TCPNode::receiveSYN(std::shared_ptr<struct ip> ipHeader,
     listenSock.incompleteConns.push_front(clientSock.id);
 
     // Send SYN + ACK
-    send(clientSock, TH_SYN | TH_ACK);
+    send(clientSock, TH_SYN | TH_ACK, "");
 }
 
 void TCPNode::receiveSYNACK(std::shared_ptr<struct ip> ipHeader, 
@@ -483,7 +552,7 @@ void TCPNode::receiveSYNACK(std::shared_ptr<struct ip> ipHeader,
             clientSock.seqNum = tcpHeader->th_ack;
             clientSock.ackNum = tcpHeader->th_seq + 1;
 
-            send(clientSock, TH_ACK);
+            send(clientSock, TH_ACK, "");
         }
     }
 }
@@ -544,6 +613,16 @@ std::vector<std::tuple<int, ListenSocket>> TCPNode::getListenSockets() {
     return listenSockets;
 }
 
+void flushSendBuffer(ClientSocket& clientSock) {
+    int cap = clientSock.sendBuffer.getCapacity();
+    int sendWindowSize = cap - clientSock.sendBuffer.getWindowSize();
+
+    std::vector<char> buf(sendWindowSize);
+    int numCopied = clientSock.sendBuffer.getNumBytes(sendWindowSize, buf);
+
+    std::string payload(buf.begin(), buf.end());
+    send(clientSock, 0, payload);
+}
 
 // The TCP checksum is computed based on a "pesudo-header" that
 // combines the (virtual) IP source and destination address, protocol value,

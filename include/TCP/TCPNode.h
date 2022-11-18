@@ -18,7 +18,12 @@ class IPNode;
 const int MIN_PORT = 1024;
 const int MAX_PORT = 65535;
 
-const int DEFAULT_WINDOW_SIZE = 65535;
+const int SEND_WINDOW_SIZE = INT_MAX;
+const int RECV_WINDOW_SIZE = 65535;
+
+const int MAX_RETRANSMITS = 5;
+
+const int TCP_PROTOCOL_NUMBER = 6;
 
 class TCPNode {
     public:
@@ -82,10 +87,11 @@ class TCPNode {
         // Some possible failures : EBADF
         void close(int socket);
 
-
         // Helper function
         std::vector<std::tuple<int, ClientSocket>> getClientSockets();
         std::vector<std::tuple<int, ListenSocket>> getListenSockets();
+
+        void retransmitPackets();
 
     private:
         int nextSockId;

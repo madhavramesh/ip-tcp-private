@@ -66,6 +66,12 @@ int main(int argc, char *argv[]) {
     auto receiveFunc = std::bind(&IPNode::receive, node->ipNode);
     std::thread(receiveFunc).detach();
 
+    // -------------------------------------------------------------------------
+    // Start retransmit thread on TCP node
+
+    auto retransmitFunc = std::bind(&TCPNode::retransmitPackts, node);
+    std::thread(retransmitFunc).detach();
+
     // ------------------------------------------------------------------------- 
 
     // Set up REPL
