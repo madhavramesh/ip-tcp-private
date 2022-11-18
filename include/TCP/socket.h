@@ -3,8 +3,9 @@
 #include <unordered_map>
 #include <deque>
 #include <string>
-
 #include <boost/circular_buffer.hpp>
+
+#include "include/TCP/CircularBuffer.h"
 
 enum SocketState {
     LISTEN,
@@ -42,11 +43,17 @@ struct ClientSocket {
     unsigned int destPort;
     std::string srcAddr;
     unsigned int srcPort;
-    unsigned int seqNum;
-    unsigned int ackNum;
 
-    // boost::circular_buffer<char> sendBuffer();
-    // boost::circular_buffer<char> recvBuffer();
+    unsigned int sendWnd;
+    unsigned int sendWl1;
+    unsigned int sendWl2;
+    unsigned int iss;
+
+    unsigned int irs;
+
+    unsigned int sendWnd;
+    TCPCircularBuffer sendBuffer;
+    TCPCircularBuffer recvBuffer;
 };
 
 struct ListenSocket {

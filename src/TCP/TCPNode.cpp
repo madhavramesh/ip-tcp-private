@@ -151,6 +151,7 @@ int TCPNode::connect(std::string& address, unsigned int port) {
 }
 
 void TCPNode::send(ClientSocket& clientSock, unsigned char sendFlags) {
+    // #todo handle splitting packets i.e. less than max tcp packet size
     std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
     tcpHeader->th_sport = htons(clientSock.srcPort);
     tcpHeader->th_dport = htons(clientSock.destPort);
@@ -177,29 +178,81 @@ void TCPNode::send(ClientSocket& clientSock, unsigned char sendFlags) {
 TCPNode::AddrAndPort TCPNode::extractAddrPort(std::shared_ptr<struct ip> ipHeader, 
         std::shared_ptr<struct tcphdr> tcpHeader) {
 
-    std::string srcAddr = ip::make_address_v4(ntohl(ipHeader->ip_src.s_addr)).to_string();
-    unsigned int srcPort = ntohs(tcpHeader->th_sport);
-    std::string destAddr = ip::make_address_v4(ntohl(ipHeader->ip_dst.s_addr)).to_string();
-    int destPort = ntohs(tcpHeader->th_dport);
+    std::string srcAddr = ip::make_address_v4(ipHeader->ip_src.s_addr).to_string();
+    unsigned int srcPort = tcpHeader->th_sport;
+    std::string destAddr = ip::make_address_v4(ipHeader->ip_dst.s_addr).to_string();
+    int destPort = tcpHeader->th_dport;
 
     return std::make_tuple(srcAddr, srcPort, destAddr, destPort);
 }
 
-void handleClient(
+void TCPNode::handleClient(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader, 
+    std::string payload,
     int socketId) {
         
         auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
         ClientSocket socket = client_sd_table[socketId]; // hopefully it exists
 
-        // 1) Assume initials are valid
+        // 1) Check validity
+        
+        bool acceptable = true;
+        int segSeq   = tcpHeader->th_seq;
+        int recvNext = socket.irs + socket.recvBuffer.getNext();
+        int recvLast = recvNext + socket.recvBuffer.getWindowSize();
 
+        if ((payload.size() == 0) && (tcpHeader->th_win == 0)) {         // case #1
+            if (!(segSeq == recvNext)) {
+                acceptable = false;
+            }
+        } else if ((payload.size() == 0) && (tcpHeader->th_win > 0)) {   // case #2
+            if (!(recvNext <= segSeq && segSeq < recvLast)) {
+                acceptable = false;
+            }
+        } else if ((tcpHeader->th_win == 0) && (tcpHeader->th_win == 0)) {  // case #3
+                acceptable = false;
+        } else {                                                            // case #4
+            if (!((recvNext <= segSeq && segSeq < recvLast) ||
+                (recvNext <= segSeq + payload.size() - 1 && segSeq + payload.size() - 1 < recvLast))) {
+                acceptable = false;
+            }
+        }
+
+        if (!acceptable) {
+            if (tcpHeader->th_flags & TH_RST) {
+                return;
+            }
+            // Send ACK
+            send(socket,TH_ACK, socket.sendBuffer.getNext(), socket.recvBuffer.getNext(), "");
+            return;
+        }
+
+        // trim 
+        if (segSeq < recvNext) {
+            payload = payload.substr(recvNext - segSeq + 1);
+        }
+        if (recvLast <= segSeq + payload.size() - 1) {
+            payload = payload.substr(0, recvLast - segSeq);
+        }
+        
         // 2) Check the reset bit
         bool resetBitSet = tcpHeader->th_flags & TH_RST;
 
-        if (resetBitSet && 
-        ((socket.state == SocketState.TIME_WAIT) || (socket.state == SocketState.SYN_RECV))) {
+        if (resetBitSet && (socket.state == SocketState::SYN_RECV)) {
+            // If initiated with passive open, return back to listen state
+            client_port_table[destPort].erase(socketId);
+            client_sd_table.erase(socketId);
+
+            // # potentially consider active vs passive open
+
+            // # flush
+            flushSendBuffer(socket);
+
+            return;
+        }
+
+        else if (resetBitSet && (socket.state == SocketState::TIME_WAIT)) {
             // If initiated with passive open, return back to listen state
             client_port_table[destPort].erase(socketId);
             client_sd_table.erase(socketId);
@@ -208,8 +261,12 @@ void handleClient(
 
             return;
         }
-        else if ((socket.state == SocketState.CLOSE_WAIT) && resetBitSet) {
-            // # finish later
+
+        else if (resetBitSet && (socket.state == SocketState::CLOSE_WAIT)) {
+            // # send reset responses to outstanding reads/sends
+
+            // # flush
+            flushSendBuffer(socket);
 
             return;
         }
@@ -219,34 +276,104 @@ void handleClient(
         // 4) Check SYN bit
         bool synBitSet = tcpHeader->th_flags & TH_SYN;
 
-        if (synBitSet && (socket.state == SocketState.SYN_RECV)) {
+        if (synBitSet && (socket.state == SocketState::SYN_RECV)) {
             // Check if passive OPEN 
             if (!socket.activeOpen) {
                 // Return back to listen state
                 client_port_table[destPort].erase(socketId);
                 client_sd_table.erase(socketId);
+                
                 return;
             }
         }
 
-        else if (synBitSet && (socket.state == SocketState.TIME_WAIT)) {
+        else if (synBitSet && (socket.state == SocketState::TIME_WAIT)) {
+            // Flush
+            flushSendBuffer(socket);
+
             // If syn in window, it is an error
             // send reset
             send(socket, TH_RST);
 
-            // Send reset response to user
-            // Flush
-            // by making read/send return 0
-
+            // Send reset response to user by making read/send return 0
 
             return;
         }
+
+        // 5) Check ACK bit
+        bool ackBitSet = tcpHeader->th_flags & TH_ACK;
+        if (!ackBitSet) {
+            return;
+        }
+        
+        else if (socket.state == SocketState::SYN_RECV) {
+            tcp_seq ack = tcpHeader->th_ack;
+            if (socket.sendBuffer.start < ack && ack <= socket.sendBuffer.next) {
+                socket.state = SocketState::ESTABLISHED;
+                socket.sndWnd = tcpHeader->th_win;
+
+                socket.seqNum = tcpHeader->th_ack;
+                socket.ackNum = tcpHeader->th_seq;
+                // continue processing in ESTABLISHED state
+            } else {
+                // send reset
+                socket.seqNum = tcpHeader->th_ack;
+                send(socket, TH_RST, "");
+                return;
+            }
+        }
+
+        // 6) If ESTABLISHED state
+        if (socket.state == SocketState::ESTABLISHED || socket.state == SocketState::FIN_WAIT1 ||
+            socket.state == SocketState::FIN_WAIT2 || socket.state == SocketState::CLOSE_WAIT) {
+            if (socket.sendBuffer.start < ack && ack <= socket.sendBuffer.next) {
+                // update send buffer
+                socket.sendBuffer.start = ack;
+
+                // #todo handle retransmission
+                // #todo handle out of order packets
+            } else if (ack > socket.sendBuffer.next) {
+                // Send an ack
+                send(socket, TH_ACK, "");
+                return;
+            }
+
+            if (socket.sendBuffer.start <= ack && ack <= socket.sendBuffer.next) {
+                if ()
+                socket.sendWnd = tcpHeader->th_win;
+                
+                if ()
+            }
+        }
+
+        if (socket.state == SocketState::FIN_WAIT1) {
+            // FIN segment has been acknowledged
+        }
+
+        if (socket.state == SocketState::FIN_WAIT2) {
+            // User CLOSE can be acknowledged
+
+        }
+
+    
 }
 
 void TCPNode::receive(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader,
     std::string& payload) {
+        
+        // Convert back to host byte order
+        ipHeader->ip_src.s_addr = ntohl(ipHeader->ip_src.s_addr);
+        ipHeader->ip_dst.s_addr = ntohl(ipHeader->ip_dst.s_addr);
+        ipHeader->ip_len = ntohs(ipHeader->ip_len);
+
+        tcpHeader->th_sport = ntohs(tcpHeader->th_sport);
+        tcpHeader->th_dport = ntohs(tcpHeader->th_dport);
+        tcpHeader->th_seq = ntohl(tcpHeader->th_seq);
+        tcpHeader->th_ack = ntohl(tcpHeader->th_ack);
+        tcpHeader->th_win = ntohs(tcpHeader->th_win);
+        
 
         // Find socket
         auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
@@ -318,7 +445,7 @@ void TCPNode::receiveSYN(std::shared_ptr<struct ip> ipHeader,
     clientSock.srcPort = destPort;
     clientSock.seqNum = generateISN(clientSock.srcAddr, clientSock.srcPort, clientSock.destAddr,
                                      clientSock.destPort);
-    clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
+    clientSock.ackNum = tcpHeader->th_seq + 1;
 
     // Add new socket to socket table
     client_sd_table.insert(std::make_pair(clientSock.id, clientSock));
@@ -353,8 +480,8 @@ void TCPNode::receiveSYNACK(std::shared_ptr<struct ip> ipHeader,
         ClientSocket& clientSock = client_sd_table[clientSockDescriptor];
         if (clientSock.state == SocketState::SYN_SENT) {
             clientSock.state = SocketState::ESTABLISHED;
-            clientSock.seqNum = ntohl(tcpHeader->th_ack);
-            clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
+            clientSock.seqNum = tcpHeader->th_ack;
+            clientSock.ackNum = tcpHeader->th_seq + 1;
 
             send(clientSock, TH_ACK);
         }
@@ -387,8 +514,8 @@ void TCPNode::receiveACK(std::shared_ptr<struct ip> ipHeader,
         ClientSocket& clientSock = client_sd_table[*clientSocketIt];
         if (clientSock.state == SocketState::SYN_RECV) {
             clientSock.state = SocketState::ESTABLISHED;
-            clientSock.seqNum = ntohl(tcpHeader->th_ack);
-            clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
+            clientSock.seqNum = tcpHeader->th_ack;
+            clientSock.ackNum = tcpHeader->th_seq + 1;
     
             // Remove from incomplete connections
             listenSock.incompleteConns.erase(clientSocketIt);

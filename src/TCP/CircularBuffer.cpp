@@ -4,22 +4,22 @@
 
 TCPCircularBuffer::TCPCircularBuffer(int size) : data(size), start(1), middle(1), end(0) {}
 
-TCPCircularBuffer::incrementStart() {
-    start = (start + n) % data.capacity();
+TCPCircularBuffer::incrementStart(int n) {
+    start += n;
 }
 
-TCPCircularBuffer::incrementNext() {
-    next = (next + n) % data.capacity();
+TCPCircularBuffer::incrementNext(int n) {
+    next += n;
 }
 
-TCPCircularBuffer::incrementLast() {
-    last = (last + n) % data.capacity();
+TCPCircularBuffer::incrementLast(int n) {
+    last += n;
 }
 
 int write(int numBytes, std::vector<char>& buf) {
     int pos = 0;
     while (last != start && pos < numBytes) {
-        last = (last + 1) % data.capacity();
+        last += 1;
         data[last] = buf[pos];
         pos++;
     }
@@ -30,7 +30,7 @@ int read(int numBytes, std::vector<char>& buf) {
     int insertPos = 0;
     while (start != next && insertPos < numBytes) {
         buf[insertPos] = data[start];
-        start = (start + 1) % data.capacity();
+        start += 1;
         insertPos++;
     }
     return insertPos;
@@ -39,9 +39,9 @@ int read(int numBytes, std::vector<char>& buf) {
 int getStartToNext(int numBytes, std::vector<char>& buf) {
     int tempNext = start;
     int pos = 0;
-    while (tempNext != ((last + 1) % data.capacity()) && pos < numBytes) {
-        buf[pos] = data[tempNext];
-        tempNext = (tempNext + 1) % data.capacity();
+    while (tempNext != (last + 1) && pos < numBytes) {
+        buf[pos] = data[tempNext % data.capacity()];
+        tempNext += 1;
         pos++;
     }
     next = tempNext;

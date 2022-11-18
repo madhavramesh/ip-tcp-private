@@ -122,6 +122,12 @@ class TCPNode {
 
         )
 
+        void handleClient(
+            std::shared_ptr<struct ip> ipHeader, 
+            std::shared_ptr<struct tcphdr> tcpHeader, 
+            std::string payload,
+            int socketId);
+
         void receiveSYN(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader
