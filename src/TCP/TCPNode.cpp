@@ -333,19 +333,16 @@ void TCPNode::handleClient(
             // Add to socket descriptor table
             int socketId = nextSockId++;
             sd_table.insert(std::make_pair(socketId, sock));
-            socket_tuple_table.insert(std::make_pair(sock.toTuple(), socketId));
-
-            // Fill receive buffer with data
-            newSock->write(payload.size(), payload);
+            socket_tuple_table.insert(std::make_pair(sock->toTuple(), socketId));
 
             // Send SYN + ACK
             auto tcpPacket = newSock->createTCPPacket(TH_SYN | TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
             newSock->sendTCPPacket(tcpPacket);
 
-            // important, function should not return here!
-            // that way, any payload can be processed in the syn-received state
-            } else {
-            // Drop segment
+        // important, function should not return here!
+        // that way, any payload can be processed in the syn-received state
+        } else {
+        // Drop segment
             return;
         }
     } 

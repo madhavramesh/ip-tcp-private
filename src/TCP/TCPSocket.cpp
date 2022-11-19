@@ -133,6 +133,8 @@ void TCPSocket::addIncompleteConnection(std::shared_ptr<TCPSocket> newSock) {
     newSock->unAck = newSock->iss;
     newSock->sendNext = newSock->iss + 1;
 
+    newSock->recvBuffer.initializeWith(tcpHeader->th_seq);
+
     // Add socket to corresponding listening socket's incomplete connections
     incompleteConns.push_back(newSock);
 }

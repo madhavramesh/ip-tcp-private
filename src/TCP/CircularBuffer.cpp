@@ -1,6 +1,6 @@
 #include <include/TCP/CircularBuffer.h>
 
-TCPCircularBuffer::TCPCircularBuffer(int size) : data(size), start(1), next(0), last(0) {} // #todo double check initial vals and places where you use it
+TCPCircularBuffer::TCPCircularBuffer(int size) : data(size), start(1), next(1), last(0) {} // #todo double check initial vals and places where you use it
 
 uint32_t TCPCircularBuffer::getStart() {
     return start;
@@ -28,7 +28,7 @@ void TCPCircularBuffer::setLast(int n) {
 
 void TCPCircularBuffer::initializeWith(int n) {
     start = n + 1;
-    next = n;
+    next = n + 1;
     last = n;
 }
 
