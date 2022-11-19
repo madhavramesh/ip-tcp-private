@@ -14,7 +14,9 @@
 #include <include/TCP/CircularBuffer.h>
 
 const uint16_t RECV_WINDOW_SIZE = 65535;
-const int MAX_RETRANSMITS = 5;
+
+const int DEFAULT_RTO = 1;              // In seconds
+const int MAX_RETRANSMITS = 5;          // Avoids the calculation of R1 and R2
 
 const int TCP_PROTOCOL_NUMBER = 6;
 
@@ -107,12 +109,6 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         uint32_t iss { 0 };
         uint32_t irs { 0 };
 
-        int maxRetransmits { MAX_RETRANSMITS };
-        // TODO: Potentially include both R1 and R2 timeouts
-        // TODO: Dynamically calculate RTO
-
-        // TODO: Implement zero-window probing and Silly Window Syndrome
-
         uint32_t unAck { 0 };
         uint32_t sendNext { 0 };
 
@@ -121,20 +117,22 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             std::string payload;
         };
         // TCP Packets that were written while node was in SYN_SEND or SYN_RECV
-        std::list<std::unique_ptr<TCPPacket>> waitToSendQueue;
+        std::deque<std::unique_ptr<TCPPacket>> waitToSendQueue;
         // TCP Packets that were received out of order
-        std::list<std::unique_ptr<TCPPacket>> outOfOrderQueue;
+        std::deque<std::unique_ptr<TCPPacket>> outOfOrderQueue;
 
-        struct RetransmitPacket {
-            std::shared_ptr<struct tcphdr> tcpHeader;
-            std::string payload;
-            std::chrono::time_point<std::chrono::steady_clock> retransmitTime;
-            std::chrono::seconds retransmitInterval;
-            int numRetransmits;
-        };
+        // TODO: Potentially include both R1 and R2 timeouts
+        // TODO: Dynamically calculate RTO
+
+        // TODO: Implement zero-window probing and Silly Window Syndrome
+
+        // Retransmission information
+        int maxRetransmits { MAX_RETRANSMITS };
+        int retransmitAttempts { 0 };
+        std::chrono::time_point<std::chrono::steady_clock> lastRetransmitTime;
 
         // TCP Packets to retransmit. Removed from queue once ACKed
-        std::list<std::unique_ptr<RetransmitPacket>> retransmissionQueue;
+        std::deque<std::unique_ptr<TCPPacket>> retransmissionQueue;
         TCPCircularBuffer recvBuffer;
 
         // NOTE: Only used by listen sockets

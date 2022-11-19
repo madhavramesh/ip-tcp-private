@@ -151,7 +151,13 @@ void TCPSocket::sendTCPPacket(std::shared_ptr<struct tcphdr> tcpHeader, std::str
     }
     sendNext += payload.size();
 
-    // Add to retranmission queue
+    // Add to retranmission queue if necessary 
+    bool expectAck = (tcpHeader->th_flags & (th_SYN | th_FIN)) || (payload.size() > 0);
+    if (expectAck) {
+        std::unique_ptr<TCPPacket> tcp
+    }
+
+
     std::unique_ptr<struct RetransmitPacket> retransmitPacket = std::make_unique<RetransmitPacket>();
     retransmitPacket->tcpHeader = tcpHeader;
     retransmitPacket->payload = payload;
@@ -167,34 +173,36 @@ void TCPSocket::receiveTCPPacket(
 );
 
 void TCPSocket::retransmitPackets() {
+    std::chrono::milliseconds retransmitInterval(1000);
+    for (int i = 0; i < retransmitAttempts; i++) {
+        retransmitInterval <<= 2;
+    }
+
     auto curTime = std::chrono::steady_clock::now();
-    for (auto it = clientSock.retransmissionQueue.begin(); 
-            it != clientSock.retransmissionQueue.end(); it++) {
-        auto timeDiff = std::chrono::duration_cast<std::seconds>(curTime - it->retransmitTime).count();
-        if (timeDiff > it->retransmitInterval) {
-            // Exponential backoff for retransmission 
-            it->retransmitInterval *= 2;
-            it->numRetransmits++;
+    auto timeDiff = std::chrono::duration_cast<std::milliseconds>(curTime - it->time).count();
+    if (timeDiff < retransmitInterval) {
+        return;
+    }
 
-            if (it->numRetransmits > clientSock.maxRetransmits) {
-                // Close socket 
-                retransmissionQueue.erase(it);
-                return;
-            }
-            it->retransmitTime = std::chrono::steady_clock::now();
+    lastRetransmitTime = curTime;
+    retransmitAttempts++;
 
-            // Retransmit packet if receiver window allows
-            uint32_t segEnd = (it->tcpHeader->th_seq + it->payload.size()) - 1;
-            if (segEnd < unAck + sendWnd) {
-                std::string newPayload = "";
-                newPayload.resize(sizeof(struct tcphdr));
-                memcpy(&newPayload[0], tcpHeader.get(), sizeof(struct tcphdr));
-                memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
+    // Close socket if too many retransmission attempts have been made
+    if (retransmitAttempts > maxRetransmits) {
 
-                ipNode->sendMsg(clientSock.destAddr, clientSock.srcAddr, newPayload, 
-                                TCP_PROTOCOL_NUMBER); 
-            }
-        }
+    }
+
+    // Retransmit packet 
+    if (!retransmissionQueue.empty()) {
+        auto tcpPacket = retransmissionQueue.front();
+
+        std::string newPayload = "";
+        newPayload.resize(sizeof(struct tcphdr));
+        memcpy(&newPayload[0], tcpPacket->tcpHeader.get(), sizeof(struct tcphdr));
+        memcpy(&newPayload[sizeof(struct tcphdr)], &tcpPacket->payload[0], tcpPacket->payload.size());
+
+        ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
+                        TCP_PROTOCOL_NUMBER); 
     }
 }
 
