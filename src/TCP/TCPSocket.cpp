@@ -178,3 +178,15 @@ uint16_t TCPSocket::computeTCPChecksum(
     uint16_t checksum = ipNode->ip_sum(buffer, total_len);
     return checksum;
 }
+
+
+/**
+ * @brief Wrapper around read from recv buffer
+ * 
+ * @param buffer 
+ * @param length 
+ * @return int 
+ */
+int TCPSocket::read(int numBytes, std::string& buf) {
+    return recvBuffer.read(numBytes, buf);
+}

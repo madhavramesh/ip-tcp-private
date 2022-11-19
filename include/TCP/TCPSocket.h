@@ -79,6 +79,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         );
 
         void retransmitPackets();
+        int read(int numBytes, std::string& buf);
 
     private:
         bool activeOpen { false };

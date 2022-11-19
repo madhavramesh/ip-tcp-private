@@ -65,7 +65,7 @@ class TCPNode {
         // Some possible failures : EBADF, EINVAL
         int read(int socket, std::vector<char>& buf);
 
-        // shutdown an connection. If type is 1, close the writing part of
+        // shutdown a connection. If type is 1, close the writing part of
         // the socket (CLOSE call in the RFC. This should send a FIN, etc.)
         // If 2 is specified, close the reading part (no equivalent in the RFC;
         // v_read calls should return 0, and the window size should not grow any

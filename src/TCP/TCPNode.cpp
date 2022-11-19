@@ -13,6 +13,9 @@
 #include <include/TCP/TCPSocket.h>
 #include <include/repl/siphash.h>
 
+// #todo fix
+int MAX_READ_SIZE = 65535;
+
 TCPNode::TCPNode(uint16_t port) : nextSockId(0), nextEphemeral(minPort), ipNode(std::make_shared<IPNode>(port)) {
 
     using namespace std::placeholders;
@@ -140,10 +143,11 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
     auto sockIt = sd_table.find(socket);
     if (sockIt == sd_table.end()) {
         std::cerr << red << "error: connection does not exist" << color_reset << std::endl;
-        return -1
+        return -1;
     }
 
     std::shared_ptr<TCPSocket> sock = sockIt->second;
+    std::string payload(buf.begin(), buf.end());
     switch (sock->getState()) {
         case TCPSocket::SocketState::LISTEN:
             std::cerr << red << "error: remote socket unspecified" << color_reset << std::endl;
@@ -154,7 +158,6 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
             return buf.size();
         case TCPSocket::SocketState::ESTABLISHED:
         case TCPSocket::SocketState::CLOSE_WAIT:
-            std::string payload(buf.begin(), buf.end());
             sock->sendTCPPacket(TH_ACK, payload);
             return buf.size();
         case TCPSocket::SocketState::FIN_WAIT1:
@@ -169,6 +172,80 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
             return -1;
     }
 }
+
+
+/**
+ * @brief Returns number of bytes read. If the call is blocking, it should loop until all bytes read
+ * #todo IMPORTANT, caller should check for -1 to see if connection is closed
+ * 
+ * @param socket 
+ * @param buf 
+ * @return int 
+ */
+int TCPNode::read(int socket, std::vector<char>& buf) {
+    // Find socket
+    auto sockIt = sd_table.find(socket);
+    if (sockIt == sd_table.end()) {
+        std::cerr << red << "error: connection does not exist" << color_reset << std::endl;
+        return -1;
+    }
+    std::shared_ptr<TCPSocket> sock = sockIt->second;
+
+    switch (sock->getState()) {
+        case TCPSocket::SocketState::CLOSED:
+            std::cerr << red << "error: connection does not exist" << color_reset << std::endl;
+            return 0;
+        case TCPSocket::SocketState::LISTEN:
+        case TCPSocket::SocketState::SYN_SENT: 
+        case TCPSocket::SocketState::SYN_RECV:
+            return 0;
+        case TCPSocket::SocketState::ESTABLISHED:
+        case TCPSocket::SocketState::FIN_WAIT1:
+        case TCPSocket::SocketState::FIN_WAIT2:
+            // do something
+            return sock.read(MAX_READ_SIZE, buf);
+        case TCPSocket::SocketState::CLOSE_WAIT:
+            // do something
+            return sock.read(MAX_READ_SIZE, buf); // #todo check this, not sure correct
+        case TCPSocket::SocketState::CLOSING:
+        case TCPSocket::SocketState::LAST_ACK:
+        case TCPSocket::SocketState::TIME_WAIT:
+            std::cerr << red << "error: connection closing" << color_reset << std::endl;
+            return -1;
+        default:
+            std::cerr << red << "error: unknown state reached" << color_reset << std::endl;
+            return -1;
+    }
+}
+
+
+void TCPNode::shutdown(int socket, int type) {
+    // Find socket
+    auto sockIt = sd_table.find(socket);
+    if (sockIt == sd_table.end()) {
+        std::cerr << red << "error: connection does not exist" << color_reset << std::endl;
+        return -1;
+    }
+    std::shared_ptr<TCPSocket> sock = sockIt->second;
+
+    switch (type) {
+        case 1: // Close writing part, send FIN
+
+            
+
+
+        case 2; // Close reading part
+
+
+        case 3; // Close both
+    }
+}
+
+
+void TCPNode::close(int socket) {
+
+}
+
 
 void TCPNode::retransmitPackets() {
     while (true) {
@@ -465,6 +542,7 @@ void TCPNode::handleClient(
         }
 
         // trim 
+        // TODO: ADJUST TCP HEADER 
         if (segSeq < recvNext) {
             payload = payload.substr(recvNext - segSeq + 1);
         }
