@@ -19,10 +19,11 @@ set(SOURCES src/TCP/main.cpp src/TCP/TCPCommands.cpp src/TCP/TCPNode.cpp
 
 # add subdirectories
 add_subdirectory(utils)
-add_subdirectory(third_party)
+# add_subdirectory(third_party)
 
 add_executable(node ${SOURCES})
-target_link_libraries(node pthread bonsai utilities ${Boost_LIBRARIES})
+# target_link_libraries(node pthread bonsai utilities ${Boost_LIBRARIES})
+target_link_libraries(node pthread utilities ${Boost_LIBRARIES})
 target_include_directories(node PRIVATE ${CMAKE_SOURCE_DIR})
 
 # debugging: prints out include directories for node

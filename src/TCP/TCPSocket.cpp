@@ -22,29 +22,8 @@ TCPTuple TCPSocket::toTuple() {
     return socketTuple;
 }
 
-//
-// bool TCPSocket::isListen() {
-    // return state == SocketState::LISTEN;
-// }
-
 TCPSocket::SocketState TCPSocket::getState() {
     return state;
-}
-
-void TCPSocket::setState(SocketState newState) {
-    state = newState;
-}
-
-void TCPSocket::setWnd(uint32_t newSendWnd) {
-    sendWnd = newSendWnd;
-}
-
-void TCPSocket::setWl1(uint32_t newSendWl1) {
-    sendWl1 = newSendWnd;
-}
-
-void TCPSocket::setWl2(uint32_t newSendWl2) {
-    sendWl2 = newSendWnd;
 }
 
 uint32_t TCPSocket::getSeqNum() {
@@ -55,6 +34,13 @@ uint32_t TCPSocket::getAckNum() {
     return recvBuffer->getNext();
 }
 
+uint32_t TCPSocket::getUnack() {
+    return unack;
+}
+
+uint32_t TCPSocket::getSendNext() {
+    return sendNext;
+}
 uint32_t TCPSocket::getIss() {
     return iss;
 }
@@ -73,6 +59,26 @@ uint32_t TCPSocket::getSendWl1() {
 
 uint32_t TCPSocket::getSendWl2() {
     return sendWl2;
+}
+
+void TCPSocket::setState(SocketState newState) {
+    state = newState;
+}
+
+void TCPSocket::setUnack(uint32_t newUnack) {
+    unack = newUnack;
+}
+
+void TCPSocket::setWnd(uint32_t newSendWnd) {
+    sendWnd = newSendWnd;
+}
+
+void TCPSocket::setWl1(uint32_t newSendWl1) {
+    sendWl1 = newSendWnd;
+}
+
+void TCPSocket::setWl2(uint32_t newSendWl2) {
+    sendWl2 = newSendWnd;
 }
 
 void TCPSocket::socket_listen() {
@@ -104,13 +110,12 @@ void TCPSocket::socket_connect() {
     iss = generateISN(socketTuple.getSrcAddr(), socketTuple.getSrcPort(), socketTuple.getDestAddr(), 
                       socketTuple.getDestPort());
     irs = 0;
-    maxRetransmits = MAX_RETRANSMITS;
     unAck = iss;
     sendNext = iss + 1;
 
-    // Create TCP header and send SYN 
-    auto tcpHeader = createTCPHeader(TH_SYN, iss, 0, "");
-    sendTCPPacket(tcpHeader, "");
+    // Create TCP packet and send SYN 
+    auto tcpPacket = createTCPPacket(TH_SYN, iss, 0, "");
+    sendTCPPacket(tcpPacket);
 }
 
 void TCPSocket::addIncompleteConnection(std::shared_ptr<TCPSocket> newSock) {
@@ -147,11 +152,7 @@ int TCPSocket::write(int numBytes, std::string& payload) {
     return recvBuffer.write(numBytes, payload);
 }
 
-void TCPSocket::addToWaitQueue(std::shared_ptr<struct tcphdr> tcpHeader, std::string payload) {
-
-    std::unique_ptr<struct TCPPacket> tcpPacket = std::make_unique<TCPPacket>();
-    tcpPacket->tcpHeader = tcpHeader;
-    tcpPacket->payload = payload;
+void TCPSocket::addToWaitQueue(std::shared_ptr<struct TCPPacket>& tcpPacket) {
 
     waitToSendQueue.push_back(tcpPacket);
 }
@@ -213,6 +214,7 @@ void TCPSocket::receiveTCPPacket(
     }
 }
 
+<<<<<<< HEAD
 void TCPSocket::retransmitPackets() {
     if (!retransmissionActive) {
         return;
