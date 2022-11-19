@@ -113,6 +113,34 @@ std::shared_ptr<TCPSocket> TCPSocket::socket_accept() {
     return acceptedSock;
 }
 
+std::unique_ptr<struct TCPPacket> TCPSocket::createTCPPacket(unsigned char flags, uint32_t seqNum, 
+        uint32_t ackNum, std::string payload) {
+
+    std::unique_ptr<struct tcphdr> tcpHeader = std::make_unique<struct tcphdr>();
+    tcpHeader->th_sport = htons(socketTuple.getSrcPort());
+    tcpHeader->th_dport = htons(socketTuple.getDestPort());
+    tcpHeader->th_seq = htonl(seqNum);
+    tcpHeader->th_ack = htonl(ackNum);
+    tcpHeader->th_flags = sendFlags;
+
+    uint16_t windowSize = recvBuffer.getWindowSize();
+    tcpHeader->th_win = htons(windowSize);
+    tcpHeader->th_off = 5;
+    tcpHeader->th_sum = 0; 
+    tcpHeader->th_urp = 0;
+
+    // Compute checksum
+    uint32_t srcIp = inet_addr(socketTuple.getSrcAddr().c_str());
+    uint32_t destIp = inet_addr(socketTuple.getDestAddr().c_str());
+    tcpHeader->th_sum = computeTCPChecksum(srcIp, destIp, tcpHeader, payload);
+
+    struct TCPPacket tcpPacket;
+    tcpPacket.tcpHeader = tcpHeader;
+    tcpPacket.payload   = payload;
+    return tcpPacket;
+}
+
+
 void TCPSocket::socket_connect() {
     activeOpen = true;
     state = SocketState::SYN_SENT;
@@ -165,7 +193,7 @@ int TCPSocket::write(int numBytes, std::string& payload) {
     return recvBuffer.write(numBytes, payload);
 }
 
-void TCPSocket::addToWaitQueue(std::shared_ptr<struct TCPPacket>& tcpPacket) {
+void TCPSocket::addToWaitQueue(std::unique_ptr<struct TCPPacket>& tcpPacket) {
 
     waitToSendQueue.push_back(tcpPacket);
 }
