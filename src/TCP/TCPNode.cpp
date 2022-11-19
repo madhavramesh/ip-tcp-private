@@ -252,7 +252,6 @@ void TCPNode::close(int socket) {
     return;
 }
 
-
 void TCPNode::retransmitPackets() {
     while (true) {
         for (auto& [_, sock] : sd_table) {

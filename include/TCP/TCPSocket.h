@@ -89,7 +89,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         int read(int numBytes, std::string& buf);
         int write(int numBytes, std::string& payload);
 
-        void sendTCPPacket(std::shared_ptr<struct TCPPacket>& tcpPacket);
+        void sendTCPPacket(std::unique_ptr<struct TCPPacket>& tcpPacket);
         void receiveTCPPacket(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader,
@@ -149,6 +149,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         int maxRetransmits { MAX_RETRANSMITS };
         int retransmitAttempts { 0 };
         std::chrono::time_point<std::chrono::steady_clock> lastRetransmitTime;
+        std::atomic<bool> retransmissionActive;
 
         // TCP Packets to retransmit. Removed from queue once ACKed
         std::deque<std::unique_ptr<TCPPacket>> retransmissionQueue;
@@ -159,9 +160,12 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         std::condition_variable acceptCond;
 
         // NOTE: Only used by listen sockets
-        std::deque<std::shared_ptr<TCPSocket>> completeConns;                        // ESTABLISHED state
-        std::unordered_map<TCPTuple, std::shared_ptr<TCPSocket>> incompleteConns;    // SYN-RECEIVED state
-        std::shared_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, std::string payload);
+        // ESTABLISHED state
+        std::deque<std::shared_ptr<TCPSocket>> completeConns;                   
+        // SYN-RECEIVED state
+        std::unordered_map<TCPTuple, std::shared_ptr<TCPSocket>> incompleteConns;  
+
+        std::unique_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, std::string payload);
 
         uint16_t computeTCPChecksum(
             uint32_t virtual_ip_src,

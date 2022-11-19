@@ -8,11 +8,15 @@
 #include <include/TCP/CircularBuffer.h>
 
 TCPSocket::TCPSocket(std::string localAddr, uint16_t localPort, std::string remoteAddr, uint16_t remotePort) : socketTuple(localAddr, localPort, destAddr, destPort), 
-   recvBuffer(RECV_WINDOW_SIZE) {}
+   recvBuffer(RECV_WINDOW_SIZE),
+   retransmissionActive(false),
+   lastRetransmitTime(std::chrono::steady_clock::now()) {}
 
 TCPSocket::TCPSocket(const TCPTuple& otherTuple) : 
     socketTuple(otherTuple),
-    recvBuffer(RECV_WINDOW_SIZE) {}
+    recvBuffer(RECV_WINDOW_SIZE),
+    retransmissionActive(false),
+    lastRetransmitTime(std::chrono::steady_clock::now()) {}
 
 TCPTuple TCPSocket::toTuple() {
     return socketTuple;
@@ -43,7 +47,6 @@ void TCPSocket::setWl2(uint32_t newSendWl2) {
     sendWl2 = newSendWnd;
 }
 
-
 uint32_t TCPSocket::getSeqNum() {
     return sendNext;
 }
@@ -71,7 +74,6 @@ uint32_t TCPSocket::getSendWl1() {
 uint32_t TCPSocket::getSendWl2() {
     return sendWl2;
 }
-
 
 void TCPSocket::socket_listen() {
     activeOpen = false;
@@ -154,7 +156,7 @@ void TCPSocket::addToWaitQueue(std::shared_ptr<struct tcphdr> tcpHeader, std::st
     waitToSendQueue.push_back(tcpPacket);
 }
 
-void TCPSocket::sendTCPPacket(std::shared_ptr<struct TCPPacket>& tcpPacket) {
+void TCPSocket::sendTCPPacket(std::unique_ptr<struct TCPPacket> tcpPacket) {
     std::shared_ptr<struct tcphdr> tcpHeader = tcpPacket->tcpHeader;
     std::string payload = tcpPacket->payload;
 
@@ -177,25 +179,45 @@ void TCPSocket::sendTCPPacket(std::shared_ptr<struct TCPPacket>& tcpPacket) {
     // Add to retranmission queue if necessary 
     bool expectAck = (tcpHeader->th_flags & (th_SYN | th_FIN)) || (payload.size() > 0);
     if (expectAck) {
-        std::unique_ptr<TCPPacket> tcp
+        retransmissionQueue.push_back(std::move(tcpPacket));
+        if (!retransmissionActive) {
+            retransmissionActive = true;
+            lastRetransmitTime = std::chrono::steady_clock::now();
+        }
     }
-
-
-    std::unique_ptr<struct RetransmitPacket> retransmitPacket = std::make_unique<RetransmitPacket>();
-    retransmitPacket->tcpHeader = tcpHeader;
-    retransmitPacket->payload = payload;
-    retransmitPacket->time = std::chrono::steady_clock::now();
-
-    retransmissionQueue.push_back(retransmitPacket);
 }
 
 void TCPSocket::receiveTCPPacket(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader,
-    std::string& payload
-);
+    std::string& payload) {
+
+    if (tcpHeader->th_flags & th_ACK) {
+        while (!retransmissionQueue.empty()) {
+            auto& packet = retransmissionQueue.front();
+            int additionalByte = tcpHeader->th_flags & (TH_SYN | TH_FIN);
+            uint32_t segEnd = packet->tcpHeader->th_seq + packet->payload.size() + additionalByte;
+
+            if (segEnd <= tcpHeader->th_ack) {
+                retransmissionQueue.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        if (retransmissionQueue.empty()) {
+            retransmitAttempts = 0;
+            retransmissionActive = false;
+        }
+        lastRetransmitTime = std::chrono::steady_clock::now();
+    }
+}
 
 void TCPSocket::retransmitPackets() {
+    if (!retransmissionActive) {
+        return;
+    }
+
     std::chrono::milliseconds retransmitInterval(1000);
     for (int i = 0; i < retransmitAttempts; i++) {
         retransmitInterval <<= 2;
@@ -212,27 +234,26 @@ void TCPSocket::retransmitPackets() {
 
     // Close socket if too many retransmission attempts have been made
     if (retransmitAttempts > maxRetransmits) {
-
+        state = SocketState::CLOSED;
+        return;
     }
 
-    // Retransmit packet 
-    if (!retransmissionQueue.empty()) {
-        auto tcpPacket = retransmissionQueue.front();
-
+    // Retransmit packets
+    for (auto& packet : retransmissionQueue) {
         std::string newPayload = "";
         newPayload.resize(sizeof(struct tcphdr));
-        memcpy(&newPayload[0], tcpPacket->tcpHeader.get(), sizeof(struct tcphdr));
-        memcpy(&newPayload[sizeof(struct tcphdr)], &tcpPacket->payload[0], tcpPacket->payload.size());
+        memcpy(&newPayload[0], packet->tcpHeader.get(), sizeof(struct tcphdr));
+        memcpy(&newPayload[sizeof(struct tcphdr)], &packet->payload[0], packet->payload.size());
 
         ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
                         TCP_PROTOCOL_NUMBER); 
     }
 }
 
-std::shared_ptr<struct TCPPacket> TCPSocket::createTCPHeader(unsigned char flags, uint32_t seqNum, 
+std::unique_ptr<struct TCPPacket> TCPSocket::createTCPHeader(unsigned char flags, uint32_t seqNum, 
         uint32_t ackNum, std::string payload) {
 
-    std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
+    std::unique_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
     tcpHeader->th_sport = htons(socketTuple.getSrcPort());
     tcpHeader->th_dport = htons(socketTuple.getDestPort());
     tcpHeader->th_seq = htonl(seqNum);
@@ -250,9 +271,9 @@ std::shared_ptr<struct TCPPacket> TCPSocket::createTCPHeader(unsigned char flags
     uint32_t destIp = inet_addr(socketTuple.getDestAddr().c_str());
     tcpHeader->th_sum = computeTCPChecksum(srcIp, destIp, tcpHeader, payload);
 
-    struct TCPPacket tcpPacket;
-    tcpPacket.tcpHeader = tcpHeader;
-    tcpPacket.payload   = payload;
+    std::unique_ptr<struct TCPPacket> tcpPacket = std::make_unique<struct TCPPacket>();
+    tcpPacket->tcpHeader = tcpHeader;
+    tcpPacket->payload   = payload;
     return tcpPacket;
 }
 
