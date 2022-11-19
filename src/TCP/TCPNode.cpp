@@ -149,7 +149,7 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
     std::shared_ptr<TCPSocket> sock = sockIt->second;
     std::string payload(buf.begin(), buf.end());
 
-    auto tcpHeader = sock->createTCPHeader(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
+    auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
     switch (sock->getState()) {
         case TCPSocket::SocketState::LISTEN:
             std::cerr << red << "error: remote socket unspecified" << color_reset << std::endl;
@@ -271,6 +271,7 @@ TCPTuple TCPNode::extractTCPTuple(std::shared_ptr<struct ip> ipHeader,
 
     return TCPTuple(localAddr, localPort, remoteAddr, remotePort);
 }
+
 // #todo, handle removing from incomplete to complete 
 void TCPNode::handleClient(
     std::shared_ptr<struct ip> ipHeader, 
@@ -287,16 +288,13 @@ void TCPNode::handleClient(
         if (!socket_tuple_table.count(socketTuple)) { // is closed
             if (!(tcpHeader->th_flags & TH_RST)) {
                 if (tcpHeader->th_flags & TH_ACK) {
-                    // Send RST
-                    tempSock->setSeqNum(tcpHeader->th_ack);
-                    tempSock->setAckNum(0);
-                    auto tcpHeader = sock->createTCPHeader(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
-                    tempSock->sendTCPPacket(TH_RST, "");
+                    // Ack bit on
+                    auto tcpPacket = tempSock->createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
+                    tempSock->sendTCPPacket(tcpPacket);
                 } else {
-                    // Send RST
-                    tempSock->setSeqNum(0);
-                    tempSock->setAckNum(tcpHeader->th_seq + payload.size());
-                    tempSock->sendTCPPacket(TH_RST, "");
+                    // Ack bit off
+                    auto tcpPacket = tempSock->createTCPPacket(TH_RST, 0, tcpHeader->th_seq + payload.size(), "");
+                    tempSock->sendTCPPacket(tcpPacket);
                 }
             } 
             return;
@@ -317,9 +315,10 @@ void TCPNode::handleClient(
 
             // Check for ACK
             if (tcpHeader->th_flags & TH_ACK) {
-                tempSock->setSeqNum(tcpHeader->th_ack);
-                tempSock->setAckNum(0);
-                tempSock->sendTCPPacket(TH_RST, "");
+                int seq = tcpHeader->th_ack;
+                int ack = 0;
+                auto tcpPacket = tempSock->createTCPPacket(TH_RST, seq, ack, "");
+                tempSock->sendTCPPacket(tcpPacket);
                 return;
             }
 
@@ -340,7 +339,8 @@ void TCPNode::handleClient(
                 newSock->write(payload.size(), payload);
 
                 // Send SYN + ACK
-                newSock->sendTCPPacket(TH_SYN | TH_ACK, "");
+                auto tcpPacket = newSock->createTCPPacket(TH_SYN | TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
+                newSock->sendTCPPacket(tcpPacket);
 
                 // important, function should not return here!
                 // that way, any payload can be processed in the syn-received state
@@ -374,7 +374,7 @@ void TCPNode::handleClient(
         // SYN_SENT 
         // =============================================================================================================
         
-        if (clientSock.getState() == SocketState::SYN_SENT) {
+        if (clientSock.getState() == TCPSocket::SocketState::SYN_SENT) {
             // 1) Check ACK bit
             bool ackBitSet = tcpHeader->th_flags & TH_ACK;
             if (ackBitSet) {
@@ -385,7 +385,8 @@ void TCPNode::handleClient(
                     if (tcpHeader->th_flags & TH_RST) {
                         return;
                     } else {
-                        send(clientSock, TH_RST, tcpHeader->th_ack, 0, "");
+                        auto tcpPacket = clientSock.createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
+                        clientSock.sendTCPPacket(tcpPacket);
                         return;
                     }
                 }
@@ -403,7 +404,7 @@ void TCPNode::handleClient(
                 // Otherwise (no ACK), drop the segment and return.
                 if (ackBitSet) {
                     std::cerr << "Error: connection reset" << std::endl;
-                    clientSock.state = SocketState::CLOSED;
+                    clientSock.setState(TCPSocket::SocketState::CLOSED);
                     return;
                 } else {
                     return;
@@ -435,21 +436,21 @@ void TCPNode::handleClient(
                 // <SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>
                 // and send it"
                 if (clientSock.unAck > clientSock.iss) {
-                    clientSock.state = SocketState::ESTABLISHED;
-                    int newSeq = clientSock.sendNext;
-                    int newAck = clientSock.recvBuffer.getNext() + clientSock.irs;
-                    send(clientSock, TH_ACK, newSeq, newAck, "");
+                    clientSock.setState(TCPSocket::SocketState::ESTABLISHED);
+                    auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), getAckNum(), "");
+                    clientSock.sendTCPPacket(tcpPacket);
                     // #todo make sure you're not supposed to return here
                 } else {
                     // Otherwise, enter SYN-RECEIVED (simultaneous open) and form a SYN+ACK segment
                     // <SEQ=ISS><ACK=RCV.NXT><CTL=SYN,ACK>
                     // and send it
-                    send(clientSock, TH_SYN | TH_ACK, clientSock.iss, clientSock.recvBuffer.getNext() + clientSock.irs, "");
+                    auto tcpPacket = clientSock.createTCPPacket(TH_SYN | TH_ACK, clientSock.getIss(), clientSock.getAckNum(), "");   
+                    clientSock.sendTCPPacket(tcpPacket);
 
                     // Set variables
-                    clientSock.sendWnd = tcpHeader->th_win;
-                    clientSock.Wl1 = tcpHeader->th_seq;
-                    clientSock.Wl2 = tcpHeader->th_ack;
+                    clientSock.setSendWnd(tcpHeader->th_win);
+                    clientSock.setSendWl1(tcpHeader->th_seq);
+                    clientSock.setSendWl2(tcpHeader->th_ack);
 
                     // #todo queue payload for processing after established state
                     // #todo make sure you're not supposed to return here
@@ -493,7 +494,8 @@ void TCPNode::handleClient(
                 return;
             }
             // Send ACK
-            send(socket,TH_ACK, clientSock.unAck, clientSock.recvBuffer.getNext() + clientSock.irs, "");
+            auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), clientSock.getAckNum(), "");
+            clientSock.sendTCPPacket(tcpPacket);
             return;
         }
 
@@ -509,7 +511,7 @@ void TCPNode::handleClient(
         // 2) Check the reset bit
         bool resetBitSet = tcpHeader->th_flags & TH_RST;
 
-        if (resetBitSet && (clientSock.getState() == SocketState::SYN_RECV)) {
+        if (resetBitSet && (clientSock.getState() == TCPSocket::SocketState::SYN_RECV)) {
             // If initiated with passive open, return back to listen state
             client_port_table[destPort].erase(socketId);
             client_sd_table.erase(socketId);
@@ -523,10 +525,10 @@ void TCPNode::handleClient(
         }
 
         else if (resetBitSet && (
-            clientSock.getState() == SocketState::ESTABLISHED ||
-            clientSock.getState() == SocketState::FIN_WAIT_1 ||
-            clientSock.getState() == SocketState::FIN_WAIT_2 ||
-            clientSock.getState() == SocketState::CLOSE_WAIT ||
+            clientSock.getState() == TCPSocket::SocketState::ESTABLISHED ||
+            clientSock.getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
+            clientSock.getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
+            clientSock.getState() == TCPSocket::SocketState::CLOSE_WAIT ||
             )) {
             // If the RST bit is set, then any outstanding RECEIVEs and SEND should receive "reset" responses. 
             // All segment queues should be flushed. Users should also receive an unsolicited general "connection reset" signal. 
@@ -536,17 +538,17 @@ void TCPNode::handleClient(
             // # flush
             flushSendBuffer(socket);
             std::cout << "connection reset" << std::endl;
-            clientSock.state = SocketState::CLOSED;
+            clientSock.setSite(TCPSocket::SocketState::CLOSED);
 
             return;
         }
 
         else if (resetBitSet && (
-            clientSock.getState() == SocketState::CLOSING ||
-            clientSock.getState() == SocketState::LAST_ACK ||
-            clientSock.getState() == SocketState::TIME_WAIT)) {
+            clientSock.getState() == TCPSocket::SocketState::CLOSING ||
+            clientSock.getState() == TCPSocket::SocketState::LAST_ACK ||
+            clientSock.getState() == TCPSocket::SocketState::TIME_WAIT)) {
                 // If the RST bit is set, then enter the CLOSED state, delete the TCB, and return.
-                clientSock.state = SocketState::CLOSED;
+                clientSock.setState(TCPSocket::SocketState::CLOSED);
                 // client_port_table[destPort].erase(socketId);
                 // client_sd_table.erase(socketId);
                 return;
@@ -557,7 +559,7 @@ void TCPNode::handleClient(
         // 4) Check SYN bit
         bool synBitSet = tcpHeader->th_flags & TH_SYN;
 
-        if (synBitSet && (clientSock.getState() == SocketState::SYN_RECV)) {
+        if (synBitSet && (clientSock.getState() == TCPSocket::SocketState::SYN_RECV)) {
             // Check if passive OPEN 
             if (!socket.activeOpen) {
                 // Return back to listen state
@@ -569,20 +571,21 @@ void TCPNode::handleClient(
         } 
         
         else if (synBitSet && (
-            clientSock.getState() == SocketState::ESTABLISHED ||
-            clientSock.getState() == SocketState::FIN_WAIT_1 ||
-            clientSock.getState() == SocketState::FIN_WAIT_2 ||
-            clientSock.getState() == SocketState::CLOSE_WAIT ||
-            clientSock.getState() == SocketState::CLOSING ||
-            clientSock.getState() == SocketState::LAST_ACK ||
-            clientSock.getState() == SocketState::TIME_WAIT)) {
+            clientSock.getState() == TCPSocket::SocketState::ESTABLISHED ||
+            clientSock.getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
+            clientSock.getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
+            clientSock.getState() == TCPSocket::SocketState::CLOSE_WAIT ||
+            clientSock.getState() == TCPSocket::SocketState::CLOSING ||
+            clientSock.getState() == TCPSocket::SocketState::LAST_ACK ||
+            clientSock.getState() == TCPSocket::SocketState::TIME_WAIT)) {
                 // note, this part does not follow rfc fully it seems
                 // Flush
                 flushSendBuffer(socket);
 
                 // If syn in window, it is an error
                 // send reset
-                send(socket, TH_RST);
+                auto tcpPacket = clientSock.createTCPPacket(TH_RST, clientSock.getSeqNum(), clientSock.getAckNum(), "");
+                clientSock.sendTCPPacket(tcpPacket);
 
                 // Send reset response to user by making read/send return 0
 
@@ -596,9 +599,9 @@ void TCPNode::handleClient(
         }
         tcp_seq ack = tcpHeader->th_ack;
         
-        if (ackBitSet && clientSock.getState() == SocketState::SYN_RECV) {
+        if (ackBitSet && clientSock.getState() == TCPSocket::SocketState::SYN_RECV) {
             if (clientSock.unAck < ack && ack <= clientSock.sendNext) { // #todo double check
-                clientSock.state = SocketState::ESTABLISHED;
+                clientSock.setState(TCPSocket::SocketState::ESTABLISHED);
                 clientSock.sndWnd = tcpHeader->th_win;
 
                 clientSock.seqNum = tcpHeader->th_ack;
@@ -607,7 +610,8 @@ void TCPNode::handleClient(
             } else {
                 // send reset
                 clientSock.seqNum = tcpHeader->th_ack;
-                send(socket, TH_RST, "");
+                auto tcpPacket = clientSock.createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
+                clientSock.sendTCPPacket(tcpPacket);
                 return;
             }
         }
@@ -616,9 +620,9 @@ void TCPNode::handleClient(
         // Note, the reason why there are ORs is because they all have to do at least the processing for 
         // the established state.
         if (ackBitSet && (
-            clientSock.getState() == SocketState::ESTABLISHED || clientSock.getState() == SocketState::FIN_WAIT1  ||
-            clientSock.getState() == SocketState::FIN_WAIT2   || clientSock.getState() == SocketState::CLOSE_WAIT ||
-            clientSock.getState() == SocketState::CLOSING)) {
+            clientSock.getState() == TCPSocket::SocketState::ESTABLISHED || clientSock.getState() == TCPSocket::SocketState::FIN_WAIT1  ||
+            clientSock.getState() == TCPSocket::SocketState::FIN_WAIT2   || clientSock.getState() == TCPSocket::SocketState::CLOSE_WAIT ||
+            clientSock.getState() == TCPSocket::SocketState::CLOSING)) {
 
                 // Update unAck, if needed
                 if (clientSock.unAck < ack && ack <= clientSock.sendNext) { 
@@ -631,7 +635,8 @@ void TCPNode::handleClient(
                     // This is reached if an ack has been received for something that hasn't even 
                     // been sent yet.
                     // Send an ack w/ old seq and ack nums
-                    send(socket, TH_ACK, clientSock.unAck, clientSock.recvBuffer.getNext() + clientSock.irs, "");
+                    auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), clientSock.getAckNum(), "");
+                    clientSock.sendTCPPacket(tcpPacket);
                     return;
                 }
 
@@ -639,27 +644,27 @@ void TCPNode::handleClient(
                 if (clientSock.unAck <= ack && ack <= clientSock.sendNext) {
                     // If (SND.WL1 < SEG.SEQ or (SND.WL1 = SEG.SEQ and SND.WL2 =< SEG.ACK)), 
                     // set SND.WND <- SEG.WND, set SND.WL1 <- SEG.SEQ, and set SND.WL2 <- SEG.ACK.
-                    if (clientSock.Wl1 < tcpHeader->th_seq || 
+                    if (clientSock.getSendWl1() < tcpHeader->th_seq || 
                         // WL1 records the sequence number of the last segment used to update SND.WND, 
                         // and that SND.WL2 records the acknowledgment number of the last segment used to update SND.WND. 
                         // The check here prevents using old segments to update the window.
-                        (clientSock.Wl1 == tcpHeader->th_seq && clientSock.Wl2 <= tcpHeader->th_ack)) {
-                        clientSock.sendWnd  = tcpHeader->th_win;
-                        clientSock.Wl1      = tcpHeader->th_seq;
-                        clientSock.Wl2      = tcpHeader->th_ack;
-                    }
+                        (clientSock.getSendWl1() == tcpHeader->th_seq && clientSock.getSendWl2() <= tcpHeader->th_ack)) {
+                        clientSock.setSendWnd(tcpHeader->th_win);
+                        clientSock.setSendWl1(tcpHeader->th_seq);
+                        clientSock.setSendWl2(tcpHeader->th_ack);
+                        }
                 }
                     
                 // FIN-WAIT-1
-                if (clientSock.getState() == SocketState::FIN_WAIT1) {
+                if (clientSock.getState() == TCPSocket::SocketState::FIN_WAIT1) {
                     // If our FIN segment we previously sent was acknowledged, move to FIN_WAIT2
                     if (ack == clientSock.sendNext) { // #todo double check this logic
-                        clientSock.state = SocketState::FIN_WAIT2;
+                        clientSock.setState(TCPSocket::SocketState::FIN_WAIT2);
                     }
                 }
 
                 // FIN-WAIT-2
-                if (clientSock.getState() == SocketState::FIN_WAIT2) {
+                if (clientSock.getState() == TCPSocket::SocketState::FIN_WAIT2) {
                     // if the retransmission queue is empty, 
                     // the user's CLOSE can be acknowledged ("ok") but do not delete the TCB.
                     if (clientSock.retransmissionQueue.empty()) {
@@ -667,29 +672,30 @@ void TCPNode::handleClient(
                     }
                 }
 
-                if (clientSock.getState() == SocketState::CLOSING) {
+                if (clientSock.getState() == TCPSocket::SocketState::CLOSING) {
                     // If the ACK acknowledges our FIN, enter the TIME-WAIT state; otherwise, ignore the segment
                     if (ack == clientSock.sendNext) { // #todo double check this logic
-                        clientSock.state = SocketState::TIME_WAIT;
+                        clientSock.setState(TCPSocket::SocketState::TIME_WAIT);
                     }
                 }
             }
 
-        if (ackBitSet && clientSock.getState() == SocketState::LAST_ACK) {
+        if (ackBitSet && clientSock.getState() == TCPSocket::SocketState::LAST_ACK) {
             // The only thing that can arrive in this state is an 
             // acknowledgment of our FIN. If our FIN is now acknowledged, 
             // delete the TCB, enter the CLOSED state, and return.
             if (ack == clientSock.sendNext) { // #todo double check this logic
-                clientSock.state = SocketState::CLOSED;
+                clientSock.setState(TCPSocket::SocketState::CLOSED);
                 return;
             }
         }
 
-        if (ackBitSet && clientSock.getState() == SocketState::TIME_WAIT) {
+        if (ackBitSet && clientSock.getState() == TCPSocket::SocketState::TIME_WAIT) {
             // The only thing that can arrive in this state is a 
             // retransmission of the remote FIN. Acknowledge it, and restart the 2 MSL timeout.
             if (tcpHeader.th_flags & TH_FIN) { // #todo check logic, do we need to check seq and ack too?
-                send(socket, TH_ACK, clientSock.unAck, clientSock.recvBuffer.getNext() + clientSock.irs, "");
+                auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), clientSock.getAckNum(), "");
+                clientSock.sendTCPPacket(tcpPacket);
                 // #todo restart 2 MSL timeout
                 return;
             }
@@ -700,9 +706,9 @@ void TCPNode::handleClient(
 
         // 7) Process segment text
 
-        if (clientSock.getState() == SocketState::ESTABLISHED || 
-            clientSock.getState() == SocketState::FIN_WAIT1   ||
-            clientSock.getState() == SocketState::FIN_WAIT2   ||) {
+        if (clientSock.getState() == TCPSocket::SocketState::ESTABLISHED || 
+            clientSock.getState() == TCPSocket::SocketState::FIN_WAIT1   ||
+            clientSock.getState() == TCPSocket::SocketState::FIN_WAIT2   ||) {
                 // #todo handle early arrivals 
 
                 // For now, only add if sequence number matches exactly
@@ -712,23 +718,25 @@ void TCPNode::handleClient(
                     // move next byte expected pointer forward
                     clientSock.recvBuffer.incrementNext(numWritten);
 
-                    // get new window size
+                    // get new window size + update window size
                     int newRecvWind = clientSock.recvBuffer.getWindowSize();
+                    clientSock.setRecvWnd(newRecvWind);
 
                     // #todo loop through out of order queue to try and fill in
 
                     // send ack
                     // note, we don't have to worry about send window bc we are sending an empty payload
-                    send(clientSock, TH_ACK, clientSock.unAck, clientSock.recvBuffer.getNext() + clientSock.irs, newRecvWind, "");
+                    auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), clientSock.getAckNum(), "");
+                    clientSock.sendTCPPacket(tcpPacket);
                     return;
                 }
                 // #todo, consider piggy backing
             }
         
-        if (clientSock.getState() == SocketState::CLOSE_WAIT ||
-            clientSock.getState() == SocketState::CLOSING    ||
-            clientSock.getState() == SocketState::LAST_ACK   ||
-            clientSock.getState() == SocketState::TIME_WAIT) {
+        if (clientSock.getState() == TCPSocket::SocketState::CLOSE_WAIT ||
+            clientSock.getState() == TCPSocket::SocketState::CLOSING    ||
+            clientSock.getState() == TCPSocket::SocketState::LAST_ACK   ||
+            clientSock.getState() == TCPSocket::SocketState::TIME_WAIT) {
                 // this should not occur
                 std::cerr << "this should not have occured" << std::endl;
             }
@@ -737,9 +745,9 @@ void TCPNode::handleClient(
         bool finBitSet = tcpHeader->th_flags & TH_FIN;
 
         if (finBitSet && (
-            clientSock.getState() == SocketState::CLOSED || 
-            clientSock.getState() == SocketState::LISTEN || 
-            clientSock.getState() == SocketState::SYN_SENT)) {
+            clientSock.getState() == TCPSocket::SocketState::CLOSED || 
+            clientSock.getState() == TCPSocket::SocketState::LISTEN || 
+            clientSock.getState() == TCPSocket::SocketState::SYN_SENT)) {
                 // do not process because seg cannot be validated
                 // drop packet
                 return;
@@ -759,32 +767,33 @@ void TCPNode::handleClient(
             clientSock.recvBuffer.incrementNext(payload.size());
 
             // send FIN ACK back
-            send(clientSock, TH_FIN | TH_ACK, clientSock.unAck, clientSock.recvBuffer.getNext() + clientSock.irs, "");
+            auto tcpPacket = clientSock.createTCPPacket(TH_ACK | TH_FIN, clientSock.getSeqNum(), clientSock.getAckNum(), "");
+            clientSock.sendTCPPacket(tcpPacket);
 
             // change states
-            if (clientSock.getState() == SocketState::SYN_RECV || clientSock.getState() == SocketState::ESTABLISHED) {
-                clientSock.state = SocketState::CLOSE_WAIT;
+            if (clientSock.getState() == TCPSocket::SocketState::SYN_RECV || clientSock.getState() == TCPSocket::SocketState::ESTABLISHED) {
+                clientSock.setState(TCPSocket::SocketState::CLOSE_WAIT);
             }
 
-            if (clientSock.getState() == SocketState::FIN_WAIT1) {
+            if (clientSock.getState() == TCPSocket::SocketState::FIN_WAIT1) {
                 // If our FIN has been ACKed (perhaps in this segment), 
                 // then enter TIME-WAIT, start the time-wait timer, turn off the other timers; 
                 // otherwise, enter the CLOSING state.
                 if (ack == clientSock.sendNext) { // #todo double check this logic
-                    clientSock.state = SocketState::TIME_WAIT;
+                    clientSock.setState(TCPSocket::SocketState::TIME_WAIT);
                     // #todo start timer
                 } else {
-                    clientSock.state = SocketState::CLOSING;
+                    clientSock.setState(TCPSocket::SocketState::CLOSING);
                 }
             }
 
-            if (clientSock.getState() == SocketState::FIN_WAIT2) {
+            if (clientSock.getState() == TCPSocket::SocketState::FIN_WAIT2) {
                 // Enter the TIME-WAIT state. Start the time-wait timer, turn off the other timers.
-                clientSock.state = SocketState::TIME_WAIT;
+                clientSock.setState(TCPSocket::SocketState::TIME_WAIT);
                 // #todo start timer
             }
 
-            if (clientSock.getState() == SocketState::TIME_WAIT) {
+            if (clientSock.getState() == TCPSocket::SocketState::TIME_WAIT) {
                 // restart the 2 MSL timeout.
                 // #todo restart timer
             }    
@@ -839,7 +848,8 @@ void flushSendBuffer(TCPSocket& clientSock) {
     int numCopied = clientSock.sendBuffer.getNumBytes(sendWindowSize, buf);
 
     std::string payload(buf.begin(), buf.end());
-    send(clientSock, 0, payload);
+    auto tcpPacket = clientSock.createTCPPacket(TH_ACK, 0, clientSock.getAckNum(), payload);
+    clientSock.sendTCPPacket(tcpPacket);
 }
 
 // Returns a port number > 0 or -1 if a port cannot be allocated

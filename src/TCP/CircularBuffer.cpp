@@ -2,31 +2,31 @@
 
 TCPCircularBuffer::TCPCircularBuffer(int size) : data(size), start(1), next(0), last(0) {} // #todo double check initial vals and places where you use it
 
-TCPCircularBuffer::getStart() {
+uint32_t TCPCircularBuffer::getStart() {
     return start;
 }
 
-TCPCircularBuffer::getNext() {
+uint32_t TCPCircularBuffer::getNext() {
     return next;
 }
 
-TCPCircularBuffer::getLast() {
+uint32_t TCPCircularBuffer::getLast() {
     return last;
 }
 
-TCPCircularBuffer::setStart(int n) {
+void TCPCircularBuffer::setStart(int n) {
     start = n;
 }
 
-TCPCircularBuffer::setNext(int n) {
+void TCPCircularBuffer::setNext(int n) {
     next = n;
 }
 
-TCPCircularBuffer::setLast(int n) {
+void TCPCircularBuffer::setLast(int n) {
     last = n;
 }
 
-TCPCircularBuffer::initializeWith(int n) {
+void TCPCircularBuffer::initializeWith(int n) {
     start = n + 1;
     next = n;
     last = n;

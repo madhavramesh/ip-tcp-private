@@ -64,29 +64,36 @@ void TCPCommands::sockets(std::string& args) {
     interfaceString << std::endl;
 
     // For each socket, print out the socket information
-    std::vector<std::tuple<int, ClientSocket>> clientSockets = tcpNode->getClientSockets();
-    std::vector<std::tuple<int, ListenSocket>> listenSockets = tcpNode->getListenSockets();
+    std::vector<std::tuple<int, TCPSocket>> clientSockets = tcpNode->getClientSockets();
+    // #todo fix
+    // std::vector<std::tuple<int, TCPSocket>> listenSockets = tcpNode->getListenSockets();
 
-    for (auto listenSocket : listenSockets) {
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << std::get<0>(listenSocket) << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << std::get<1>(listenSocket).srcAddr << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << std::get<1>(listenSocket).srcPort << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << "0.0.0.0" << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << "0" << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << "LISTEN" << " ";
-        interfaceString << std::endl;
-    }
+    // for (auto listenSocket : listenSockets) {
+    //     int socketID = std::get<0>(listenSocket);
+    //     TCPSocket socket = std::get<1>(listenSocket);
+    //     TCPTuple tuple = socket.toTuple();
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << std::get<0>(socketID) << " ";
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcAddr() << " ";
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcPort() << " ";
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "0.0.0.0" << " ";
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "0" << " ";
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "LISTEN" << " ";
+    //     interfaceString << std::endl;
+    // }
 
     for (auto clientSocket : clientSockets) {
         int socketID = std::get<0>(clientSocket);
-        ClientSocket socket = std::get<1>(clientSocket);
+        TCPSocket socket = std::get<1>(clientSocket);
+        TCPTuple tuple = socket.toTuple();
+
 
         interfaceString << std::setw(INTERFACE_COL_SIZE) << socketID << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << socket.srcAddr << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << socket.srcPort << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << socket.destAddr << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << socket.destPort << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << SocketStateString[socket.state] << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcAddr() << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcPort() << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getDestAddr() << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getDestPort() << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << SocketStateString[socket.getState()] << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << "#todo" << " ";
         interfaceString << std::endl;
     }
 
