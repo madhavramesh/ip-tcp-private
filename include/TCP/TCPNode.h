@@ -124,10 +124,6 @@ class TCPNode {
             std::string& payload
         );
 
-        void receive(
-
-        )
-
         void handleClient(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader, 

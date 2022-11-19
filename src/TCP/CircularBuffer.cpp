@@ -1,6 +1,6 @@
 #include <include/TCP/CircularBuffer.h>
 
-TCPCircularBuffer::TCPCircularBuffer(int size) : data(size), start(1), middle(1), end(0) {}
+TCPCircularBuffer::TCPCircularBuffer(int size) : data(size), start(1), next(0), last(0) {} // #todo double check initial vals and places where you use it
 
 TCPCircularBuffer::getStart() {
     return start;
@@ -51,7 +51,6 @@ int put(int numBytes, std::string& buf) {
     while (last - start < data.capacity()) {
         data[next % data.capacity()] = buf[pos];
         pos++;
-        next++;
     }
     return pos;
 }
