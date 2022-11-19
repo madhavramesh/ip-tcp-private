@@ -70,6 +70,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         void socket_listen();
         std::shared_ptr<TCPSocket> socket_accept();
         void socket_connect();
+        int read(int numBytes, std::string& buf);
 
         void sendTCPPacket(unsigned char sendFlags, std::string payload);
         void receiveTCPPacket(

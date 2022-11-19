@@ -157,15 +157,6 @@ class TCPNode {
             std::string payload,
             int socketId);
 
-        unsigned int generateISN(
-            std::string& srcAddr,
-            unsigned int srcPort,
-            std::string& destAddr,
-            unsigned int destPort
-        );
-
-        struct siphash_key generateSecretKey();
-
         void tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 
         friend class IPNode;

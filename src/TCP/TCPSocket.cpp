@@ -66,6 +66,17 @@ void TCPSocket::socket_connect() {
     sendTCPPacket(TH_SYN, "");
 }
 
+/**
+ * @brief Wrapper around read from recv buffer
+ * 
+ * @param buffer 
+ * @param length 
+ * @return int 
+ */
+int TCPSocket::read(int numBytes, std::string& buf) {
+    return recvBuffer.read(numBytes, buf);
+}
+
 void TCPSocket::addToWaitQueue(unsigned char sendFlags, std::string payload) {
     std::shared_ptr<struct tcphdr> tcpHeader = createTCPHeader(sendFlags, payload);
 
@@ -248,4 +259,4 @@ struct siphash_key TCPSocket::generateSecretKey() {
         key.key[1] = dis(rd_gen);
     });
     return key;
-}
+

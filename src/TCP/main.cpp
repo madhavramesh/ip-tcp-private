@@ -69,7 +69,7 @@ int main(int argc, char *argv[]) {
     // -------------------------------------------------------------------------
     // Start retransmit thread on TCP node
 
-    auto retransmitFunc = std::bind(&TCPNode::retransmitPackts, node);
+    auto retransmitFunc = std::bind(&TCPNode::retransmitPackets, node);
     std::thread(retransmitFunc).detach();
 
     // ------------------------------------------------------------------------- 

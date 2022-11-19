@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 
 #include <boost/circular_buffer.hpp>
@@ -16,8 +18,8 @@ class TCPCircularBuffer {
         void incrementLast(int n);
 
         int read(int numBytes, std::string &buf);
-        int write(int numBytes, std::string& buf);
-        int put(int numBytes, std::string& buf);
+        int write(int numBytes, std::string& buf);  // not needed anymore maybe? 
+        int put(int numBytes, std::string& buf);    // puts to end
         int getNumBytes(int numBytes, std::string& buf);
 
         int getWindowSize();
