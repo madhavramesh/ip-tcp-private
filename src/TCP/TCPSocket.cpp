@@ -26,6 +26,34 @@ TCPSocket::SocketState TCPSocket::getState() {
     return state;
 }
 
+void TCPSocket::setState(SocketState newState) {
+    state = newState;
+}
+
+void TCPSocket::setWnd(uint32_t newSendWnd) {
+    sendWnd = newSendWnd;
+}
+
+void TCPSocket::setWl1(uint32_t newSendWl1) {
+    sendWl1 = newSendWnd;
+}
+
+void TCPSocket::setWl2(uint32_t newSendWl2) {
+    sendWl2 = newSendWnd;
+}
+
+void TCPSocket::setUnack(uint32_t newUnack) {
+    unack = newUnack;
+}
+
+void TCPSocket::setIrs(uint32_t newIrs) {
+    irs = newIrs;
+}
+
+uint32_t TCPSocket::getUnack() {
+    return unack;
+}
+
 uint32_t TCPSocket::getSeqNum() {
     return sendNext;
 }
@@ -61,25 +89,10 @@ uint32_t TCPSocket::getSendWl2() {
     return sendWl2;
 }
 
-void TCPSocket::setState(SocketState newState) {
-    state = newState;
+void TCPSocket::initializeRecvBuffer(uint32_t seqNum) {
+    recvBuffer.initializeWith(seqNum);
 }
 
-void TCPSocket::setUnack(uint32_t newUnack) {
-    unack = newUnack;
-}
-
-void TCPSocket::setWnd(uint32_t newSendWnd) {
-    sendWnd = newSendWnd;
-}
-
-void TCPSocket::setWl1(uint32_t newSendWl1) {
-    sendWl1 = newSendWnd;
-}
-
-void TCPSocket::setWl2(uint32_t newSendWl2) {
-    sendWl2 = newSendWnd;
-}
 
 void TCPSocket::socket_listen() {
     activeOpen = false;
@@ -216,7 +229,6 @@ void TCPSocket::receiveTCPPacket(
     }
 }
 
-<<<<<<< HEAD
 void TCPSocket::retransmitPackets() {
     if (!retransmissionActive) {
         return;
@@ -238,6 +250,7 @@ void TCPSocket::retransmitPackets() {
 
     // Close socket if too many retransmission attempts have been made
     if (retransmitAttempts > maxRetransmits) {
+        // TODO: Figure out how to actually remove this socket from the table
         state = SocketState::CLOSED;
         return;
     }

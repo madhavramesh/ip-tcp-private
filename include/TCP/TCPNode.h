@@ -113,6 +113,11 @@ class TCPNode {
             std::shared_ptr<struct tcphdr> tcpHeader
         );
 
+        uint32_t calculateSegmentEnd(
+            std::shared_ptr<struct tcphdr> tcpHeader, 
+            std::string& payload
+        );
+
         void receive(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader,
@@ -126,10 +131,21 @@ class TCPNode {
             int socketId
         );
 
-        uint32_t calculateSegmentEnd(
-            std::shared_ptr<struct tcphdr> tcpHeader, 
-            std::string& payload
+        void transitionFromClosed(
+            std::shared_ptr<TCPSocket> sock, 
+            std::shared_ptr<struct tcphdr> tcpHeader
         );
+
+        void transitionFromListen(
+            std::shared_ptr<TCPSocket> sock, 
+            std::shared_ptr<struct tcphdr> tcpHeader
+        );
+
+        void transitionFromSynSent(
+            std::shared_ptr<TCPSocket> sock, 
+            std::shared_ptr<struct tcphdr> tcpHeader
+        );
+
 
         // Allocates a random ephemeral port
         uint16_t allocatePort(std::string& srcAddr, std::string& destAddr, uint16_t destPort);
