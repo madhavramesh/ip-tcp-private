@@ -14,16 +14,22 @@ TCPCircularBuffer::getLast() {
     return last;
 }
 
-TCPCircularBuffer::incrementStart(int n) {
-    start += n;
+TCPCircularBuffer::setStart(int n) {
+    start = n;
 }
 
-TCPCircularBuffer::incrementNext(int n) {
-    next += n;
+TCPCircularBuffer::setNext(int n) {
+    next = n;
 }
 
-TCPCircularBuffer::incrementLast(int n) {
-    last += n;
+TCPCircularBuffer::setLast(int n) {
+    last = n;
+}
+
+TCPCircularBuffer::initializeWith(int n) {
+    start = n + 1;
+    next = n;
+    last = n;
 }
 
 int write(int numBytes, std::string& buf) {

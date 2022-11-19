@@ -13,9 +13,11 @@ class TCPCircularBuffer {
         unsigned int getNext();
         unsigned int getLast();
 
-        void incrementStart(int n);
-        void incrementNext(int n);
-        void incrementLast(int n);
+        void setStart(int n);
+        void setNext(int n);
+        void setLast(int n);
+
+        void initializeWith(int n);
 
         int read(int numBytes, std::string &buf);
         int write(int numBytes, std::string& buf);  // not needed anymore maybe? 

@@ -7,18 +7,17 @@
 #include <include/TCP/TCPTuple.h>
 #include <include/TCP/CircularBuffer.h>
 
-TCPSocket::TCPSocket(std::string localAddr, uint16_t localPort, std::string remoteAddr, 
-        uint16_t remotePort) : socketTuple(localAddr, localPort, destAddr, destPort) {}
+TCPSocket::TCPSocket(std::string localAddr, uint16_t localPort, std::string remoteAddr, uint16_t remotePort) : socketTuple(localAddr, localPort, destAddr, destPort), 
+   recvBuffer(RECV_WINDOW_SIZE) {}
 
-TCPSocket::TCPSocket(const TCPTuple& otherTuple) : socketTuple(otherTuple) {}
+TCPSocket::TCPSocket(const TCPTuple& otherTuple) : 
+    socketTuple(otherTuple),
+    recvBuffer(RECV_WINDOW_SIZE) {}
 
 TCPTuple TCPSocket::toTuple() {
     return socketTuple;
 }
 
-// void TCPSocket::setState(SocketState newState) {
-    // state = newState;
-// }
 //
 // bool TCPSocket::isListen() {
     // return state == SocketState::LISTEN;
@@ -28,12 +27,29 @@ TCPSocket::SocketState TCPSocket::getState() {
     return state;
 }
 
-void TCPSocket::setSeqNum(uint32_t seqNum) {
-    sendNxt = seqNum;
+// void TCPSocket::setState(SocketState newState) {
+    // state = newState;
+// }
+//
+// void TCPSocket::setWnd(uint32_t newSendWnd) {
+    // sendWnd = newSendWnd;
+// }
+//
+// void TCPSocket::setWl1(uint32_t newSendWl1) {
+    // sendWl1 = newSendWnd;
+// }
+//
+// void TCPSocket::setWl2(uint32_t newSendWl2) {
+    // sendWl2 = newSendWnd;
+// }
+//
+
+void TCPSocket::getSeqNum() {
+    return sendNext;
 }
 
-void TCPSocket::setAckNum(uint32_t ackNum) {
-    unAck = ackNum;
+void TCPSocket::getAckNum() {
+    return recvBuffer->getNext();
 }
 
 void TCPSocket::socket_listen() {
@@ -68,10 +84,29 @@ void TCPSocket::socket_connect() {
     maxRetransmits = MAX_RETRANSMITS;
     unAck = iss;
     sendNext = iss + 1;
-    recvBuffer = TCPCircularBuffer(RECV_WINDOW_SIZE);
 
     // Create TCP header and send SYN 
-    sendTCPPacket(TH_SYN, "");
+    auto tcpHeader = createTCPHeader(TH_SYN, iss, 0, "");
+    sendTCPPacket(tcpHeader, "");
+}
+
+void TCPSocket::addIncompleteConnection(std::shared_ptr<TCPSocket> newSock) {
+    // Set up new client socket
+    newSock->activeOpen = false;
+    newSock->state = SocketState::SYN_RECV;
+
+    newSock->sendWnd = tcpHeader->th_win;
+    newSock->sendWl1 = tcpHeader->th_seq;
+    newSock->sendWl2 = 0;
+
+    newSock->iss = generateISN(socketTuple.getSrcAddr(), socketTuple.getSrcPort(), 
+                               socketTuple.getDestAddr(), socketTuple.getDestPort());
+    newSock->irs = tcpHeader->th_seq;
+    newSock->unAck = newSock->iss;
+    newSock->sendNext = newSock->iss + 1;
+
+    // Add socket to corresponding listening socket's incomplete connections
+    incompleteConns.push_back(newSock);
 }
 
 /**
@@ -85,8 +120,11 @@ int TCPSocket::read(int numBytes, std::string& buf) {
     return recvBuffer.read(numBytes, buf);
 }
 
-void TCPSocket::addToWaitQueue(unsigned char sendFlags, std::string payload) {
-    std::shared_ptr<struct tcphdr> tcpHeader = createTCPHeader(sendFlags, payload);
+int TCPSocket::write(int numBytes, std::string& payload) {
+    return recvBuffer.write(numBytes, payload);
+}
+
+void TCPSocket::addToWaitQueue(std::shared_ptr<struct tcphdr> tcpHeader, std::string payload) {
 
     std::unique_ptr<struct TCPPacket> tcpPacket = std::make_unique<TCPPacket>();
     tcpPacket->tcpHeader = tcpHeader;
@@ -95,8 +133,7 @@ void TCPSocket::addToWaitQueue(unsigned char sendFlags, std::string payload) {
     waitToSendQueue.push_back(tcpPacket);
 }
 
-void TCPSocket::sendTCPPacket(unsigned char sendFlags, std::string payload) {
-    std::shared_ptr<struct tcphdr> tcpHeader = createTCPHeader(sendFlags, payload);
+void TCPSocket::sendTCPPacket(std::shared_ptr<struct tcphdr> tcpHeader, std::string payload) {
 
     std::string newPayload = "";
     newPayload.resize(sizeof(struct tcphdr));
@@ -161,15 +198,17 @@ void TCPSocket::retransmitPackets() {
     }
 }
 
-std::shared_ptr<struct tcphdr> createTCPHeader(unsigned char flags, std::string payload) {
+std::shared_ptr<struct tcphdr> createTCPHeader(unsigned char flags, uint32_t seqNum, 
+        uint32_t ackNum, std::string payload) {
+
     std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
     tcpHeader->th_sport = htons(socketTuple.getSrcPort());
     tcpHeader->th_dport = htons(socketTuple.getDestPort());
-    tcpHeader->th_seq = htonl(sendNext);
-    tcpHeader->th_ack = htonl(unAck);
+    tcpHeader->th_seq = htonl(seqNum);
+    tcpHeader->th_ack = htonl(ackNum);
     tcpHeader->th_flags = sendFlags;
 
-    uint16_t windowSize = clientSock.recvBuffer.getWindowSize();
+    uint16_t windowSize = recvBuffer.getWindowSize();
     tcpHeader->th_win = htons(windowSize);
     tcpHeader->th_off = 5;
     tcpHeader->th_sum = 0; 

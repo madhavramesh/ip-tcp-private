@@ -61,16 +61,21 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             }
         }
 
-        TCPSocket(std::string localAddr, unsigned int localPort, std::string destAddr, unsigned int destPort);
+        TCPSocket(std::string localAddr, uint16_t localPort, std::string destAddr, uint16_t destPort);
         TCPSocket(const TCPTuple& otherTuple);
 
         TCPTuple toTuple();
         SocketState getState();
+        void setState(SocketState newState);
 
         void socket_listen();
         std::shared_ptr<TCPSocket> socket_accept();
         void socket_connect();
+
+        void addIncompleteConnection(std::shared_ptr<TCPSocket> newSock);
+
         int read(int numBytes, std::string& buf);
+        int write(int numBytes, std::string& payload);
 
         void sendTCPPacket(unsigned char sendFlags, std::string payload);
         void receiveTCPPacket(
@@ -81,8 +86,14 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
 
         void retransmitPackets();
 
-        void setAckNum();
-        void setSeqNum();
+        // void setSendWnd(uint16_t newSendWnd);
+        // void setSendWl1(uint32_t newSendWl1);
+        // void setSendWl2(uint32_t newSendWl2);
+        void setAckNum(uint32_t newAckNum);
+        void setSeqNum(uint32_t newSeqNum);
+//
+        // void initializeISS();
+        // void setIRS();
 
     private:
         bool activeOpen { false };
