@@ -27,30 +27,51 @@ TCPSocket::SocketState TCPSocket::getState() {
     return state;
 }
 
-// void TCPSocket::setState(SocketState newState) {
-    // state = newState;
-// }
-//
-// void TCPSocket::setWnd(uint32_t newSendWnd) {
-    // sendWnd = newSendWnd;
-// }
-//
-// void TCPSocket::setWl1(uint32_t newSendWl1) {
-    // sendWl1 = newSendWnd;
-// }
-//
-// void TCPSocket::setWl2(uint32_t newSendWl2) {
-    // sendWl2 = newSendWnd;
-// }
-//
+void TCPSocket::setState(SocketState newState) {
+    state = newState;
+}
 
-void TCPSocket::getSeqNum() {
+void TCPSocket::setWnd(uint32_t newSendWnd) {
+    sendWnd = newSendWnd;
+}
+
+void TCPSocket::setWl1(uint32_t newSendWl1) {
+    sendWl1 = newSendWnd;
+}
+
+void TCPSocket::setWl2(uint32_t newSendWl2) {
+    sendWl2 = newSendWnd;
+}
+
+
+uint32_t TCPSocket::getSeqNum() {
     return sendNext;
 }
 
-void TCPSocket::getAckNum() {
+uint32_t TCPSocket::getAckNum() {
     return recvBuffer->getNext();
 }
+
+uint32_t TCPSocket::getIss() {
+    return iss;
+}
+
+uint32_t TCPSocket::getIrs() {
+    return irs;
+}
+
+uint16_t TCPSocket::getSendWnd() {
+    return sendWnd;
+}
+
+uint32_t TCPSocket::getSendWl1() {
+    return sendWl1;
+}
+
+uint32_t TCPSocket::getSendWl2() {
+    return sendWl2;
+}
+
 
 void TCPSocket::socket_listen() {
     activeOpen = false;
@@ -133,7 +154,9 @@ void TCPSocket::addToWaitQueue(std::shared_ptr<struct tcphdr> tcpHeader, std::st
     waitToSendQueue.push_back(tcpPacket);
 }
 
-void TCPSocket::sendTCPPacket(std::shared_ptr<struct tcphdr> tcpHeader, std::string payload) {
+void TCPSocket::sendTCPPacket(std::shared_ptr<struct TCPPacket>& tcpPacket) {
+    std::shared_ptr<struct tcphdr> tcpHeader = tcpPacket->tcpHeader;
+    std::string payload = tcpPacket->payload;
 
     std::string newPayload = "";
     newPayload.resize(sizeof(struct tcphdr));
@@ -198,7 +221,7 @@ void TCPSocket::retransmitPackets() {
     }
 }
 
-std::shared_ptr<struct tcphdr> createTCPHeader(unsigned char flags, uint32_t seqNum, 
+std::shared_ptr<struct TCPPacket> TCPSocket::createTCPHeader(unsigned char flags, uint32_t seqNum, 
         uint32_t ackNum, std::string payload) {
 
     std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
@@ -218,7 +241,11 @@ std::shared_ptr<struct tcphdr> createTCPHeader(unsigned char flags, uint32_t seq
     uint32_t srcIp = inet_addr(socketTuple.getSrcAddr().c_str());
     uint32_t destIp = inet_addr(socketTuple.getDestAddr().c_str());
     tcpHeader->th_sum = computeTCPChecksum(srcIp, destIp, tcpHeader, payload);
-    return tcpHeader;
+
+    struct TCPPacket tcpPacket;
+    tcpPacket.tcpHeader = tcpHeader;
+    tcpPacket.payload   = payload;
+    return tcpPacket;
 }
 
 // The TCP checksum is computed based on a "pesudo-header" that

@@ -7,7 +7,17 @@
 #include <condition_variable>
 #include <mutex>
 #include <memory>
+#include <boost/asio.hpp>
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <tuple>
+#include <chrono> 
+#include <mutex>
 
+#include <boost/asio.hpp>
+#include <boost/array.hpp>
+#include <netinet/ip.h>
 #include <netinet/tcp.h>
 
 #include <include/TCP/TCPSocket.h>
@@ -77,7 +87,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         int read(int numBytes, std::string& buf);
         int write(int numBytes, std::string& payload);
 
-        void sendTCPPacket(unsigned char sendFlags, std::string payload);
+        void sendTCPPacket(std::shared_ptr<struct TCPPacket>& tcpPacket);
         void receiveTCPPacket(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader,
@@ -86,11 +96,20 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
 
         void retransmitPackets();
 
-        // void setSendWnd(uint16_t newSendWnd);
-        // void setSendWl1(uint32_t newSendWl1);
-        // void setSendWl2(uint32_t newSendWl2);
+        void setSendWnd(uint16_t newSendWnd);
+        void setSendWl1(uint32_t newSendWl1);
+        void setSendWl2(uint32_t newSendWl2);
         void setAckNum(uint32_t newAckNum);
         void setSeqNum(uint32_t newSeqNum);
+
+        uint32_t getSeqNum();
+        uint32_t getAckNum();
+        uint32_t getIss();
+        uint32_t getIrs();
+        uint16_t getSendWnd();
+        uint32_t getSendWl1();
+        uint32_t getSendWl2();
+
 //
         // void initializeISS();
         // void setIRS();
@@ -144,7 +163,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         // NOTE: Only used by listen sockets
         std::deque<std::shared_ptr<TCPSocket>> completeConns;                        // ESTABLISHED state
         std::unordered_map<TCPTuple, std::shared_ptr<TCPSocket>> incompleteConns;    // SYN-RECEIVED state
-        std::shared_ptr<struct tcphdr> createTCPHeader(unsigned char flags, std::string payload);
+        std::shared_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, std::string payload);
 
         uint16_t computeTCPChecksum(
             uint32_t virtual_ip_src,

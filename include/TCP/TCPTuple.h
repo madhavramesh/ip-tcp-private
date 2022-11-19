@@ -3,7 +3,28 @@
 #include <string>
 #include <cmath>
 
+#include <unordered_map>
+#include <deque>
+#include <string>
+#include <list>
+#include <condition_variable>
+#include <mutex>
+#include <memory>
+#include <boost/asio.hpp>
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <tuple>
+#include <chrono> 
+#include <mutex>
+
+#include <boost/asio.hpp>
+#include <boost/array.hpp>
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
 #include <include/tools/hash.h>
+
+using namespace boost::asio;
 
 class TCPTuple {
     public:
