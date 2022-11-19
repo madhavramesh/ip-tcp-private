@@ -223,11 +223,103 @@ TCPNode::AddrAndPort TCPNode::extractAddrPort(std::shared_ptr<struct ip> ipHeade
 void TCPNode::handleClient(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader, 
-    std::string payload,
-    int socketId) {
-        
+    std::string payload) {
+
         auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
-        ClientSocket socket = client_sd_table[socketId]; // hopefully it exists
+
+        ClientSocket tempSock;
+        tempSock.id = -1;
+        tempSock.activeOpen = false;
+        tempSock.state = SocketState::CLOSED;
+        tempSock.srcAddr = destAddr;
+        tempSock.srcPort = destPort;
+        tempSock.destAddr = srcAddr;
+        tempSock.destPort = srcPort;
+
+        // =============================================================================================================
+        // CLOSED
+
+        if (!(listen_port_table.count(destPort) || client_port_table.count(destPort))) { // is closed
+
+            if (!(tcpHeader->th_flags & TH_RST) && (tcpHeader->th_flags & TH_ACK)) {
+                // Send RST
+                send(tempSock, TH_RST, tcpHeader->th_ack, 0, "");
+            } else {
+                // Send RST
+                send(tempSock, TH_RST, tcpHeader->th_seq + payload.size(), 0, "");
+            }
+            return;
+        }
+        
+        // =============================================================================================================
+        // LISTEN
+
+        auto listenSocketsIt = listen_port_table.find(destPort);
+           // Check if listen socket exists
+        if (listenSocketsIt != listen_port_table.end()) {
+
+            if (tcpHeader->th_flags & TH_RST) {
+                return;
+            }
+
+            if (tcpHeader->th_flags & TH_ACK) {
+                send(tempSocket, TH_RST, tcpHeader->th_ack, 0, "");
+                return;
+            }
+
+            if (tcpHeader->th_flags & TH_SYN) {
+                // Retrieve the listener socket
+                auto listenSocketIt = getListenSocket(destPort, listenSocketsIt->second);
+                if (listenSocketIt != listenSocketsIt->second.end()) {
+                    ListenSocket& listenSock = listen_sd_table[*listenSocketIt];
+
+                    // Set up new client socket
+                    ClientSocket clientSock;
+                    clientSock.id               = nextSockId++;
+                    clientSock.activeOpen       = false;
+                    clientSock.state            = SocketState::SYN_RECV;
+                    clientSock.destAddr         = srcAddr;
+                    clientSock.destPort         = srcPort;
+                    clientSock.srcAddr          = destAddr;
+                    clientSock.srcPort          = destPort;
+                    clientSock.sendWnd          = tcpHeader->th_win;
+                    clientSock.sendWl1          = tcpHeader->th_seq;
+                    clientSock.sendWl2          = 0;
+                    clientSock.iss              = generateISN(
+                                                    clientSock.srcAddr,  clientSock.srcPort, 
+                                                    clientSock.destAddr, clientSock.destPort);
+                    clientSock.irs              = tcpHeader->th_seq;
+                    clientSock.recvBuffer       = TCP::CircularBuffer(RECV_WINDOW_SIZE);
+                    clientSock.maxRetransmits   = MAX_RETRANSMITS;
+                    clientSock.unAck            = clientSock.iss;
+                    clientSock.sendNext         = clientSock.iss;
+
+                    // Add new socket to socket table
+                    client_sd_table.insert(std::make_pair(clientSock.id, clientSock));
+                    client_port_table[clientSock.srcPort].push_front(clientSock.id);
+
+                    // Add socket to corresponding listening socket's incomplete connections
+                    listenSock.incompleteConns.push_front(clientSock.id);
+
+                    // Fill receive buffer with data
+                    clientSock.recvBuffer.put(payload.size(), payload);
+
+                    // Send SYN + ACK
+                    send(clientSock, TH_SYN | TH_ACK, clientSock.iss, clientSock.recvBuffer.getNext(), "");
+                } else {
+                    // Drop segment
+                    return;
+                }
+            }
+
+        } 
+
+        // Else in client port table, continue
+
+
+
+
+        // =============================================================================================================
 
         // 1) Check validity
         
