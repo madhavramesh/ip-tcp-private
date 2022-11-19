@@ -4,7 +4,7 @@
 #include <iomanip>
 
 #include "include/IP/IPCommands.h"
-#include "include/repl/colors.h"
+#include "include/tools/colors.h"
 #include "third_party/bonsai.h"
 
 const int INTERFACE_COL_SIZE = 15;

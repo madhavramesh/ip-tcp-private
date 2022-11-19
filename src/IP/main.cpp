@@ -7,7 +7,7 @@
 
 #include "include/IP/IPCommands.h"
 #include "include/IP/IPNode.h"
-#include "include/repl/colors.h"
+#include "include/tools/colors.h"
 
 using namespace boost::asio;
 

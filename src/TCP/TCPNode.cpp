@@ -11,7 +11,7 @@
 
 #include <include/TCP/TCPNode.h>
 #include <include/TCP/TCPSocket.h>
-#include <include/repl/siphash.h>
+#include <include/tools/siphash.h>
 
 TCPNode::TCPNode(uint16_t port) : nextSockId(0), nextEphemeral(minPort), ipNode(std::make_shared<IPNode>(port)) {
 
@@ -144,6 +144,8 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
     }
 
     std::shared_ptr<TCPSocket> sock = sockIt->second;
+    std::string payload(buf.begin(), buf.end());
+
     switch (sock->getState()) {
         case TCPSocket::SocketState::LISTEN:
             std::cerr << red << "error: remote socket unspecified" << color_reset << std::endl;
@@ -154,7 +156,6 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
             return buf.size();
         case TCPSocket::SocketState::ESTABLISHED:
         case TCPSocket::SocketState::CLOSE_WAIT:
-            std::string payload(buf.begin(), buf.end());
             sock->sendTCPPacket(TH_ACK, payload);
             return buf.size();
         case TCPSocket::SocketState::FIN_WAIT1:
@@ -172,39 +173,8 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
 
 void TCPNode::retransmitPackets() {
     while (true) {
-        auto curTime = std::chrono::steady_clock::now();
-        for (auto& [id, clientSock] : client_sd_table) {
-            for (auto it = clientSock.retranmissionQueue.begin(); 
-                    it != clientSock.retransmissionQueue.end(); it++) {
-
-                auto timeDiff = std::chrono::duration_cast<std::seconds>(curTime - it->retransmitTime).count();
-                if (timeDiff > it->retransmitInterval) {
-                    // Exponential backoff for retranmission
-                    it->reTransmitInterval *= 2;
-                    it->numRetransmits++;
-
-                    if (it->numRetransmits > clientSock.maxRetransmits) {
-                        // Close socket
-                        clientSock.retransmissionQueue.erase(it);
-                        client_port_table[clientSock.destPort].erase(id);
-                        client_sd_table.erase(id);
-                        return;
-                    }
-                    it->retransmitTime = std::chrono::steady_clock::now();
-
-                    // Retransmit packet if receiver window allows
-                    unsigned int segEnd = (it->tcpHeader->th_seq + it->payload.size()) - 1;
-                    if (segEnd < clientSock.unAck + clientSock.sendWnd) {
-                        std::string newPayload = "";
-                        newPayload.resize(sizeof(struct tcphdr));
-                        memcpy(&newPayload[0], tcpHeader.get(), sizeof(struct tcphdr));
-                        memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
-
-                        ipNode->sendMsg(clientSock.destAddr, clientSock.srcAddr, newPayload, 
-                                        TCP_PROTOCOL_NUMBER); 
-                    }
-                }
-            }
+        for (auto& [_, sock] : sd_table) {
+            sock->retransmitPackets();
         }
     }
 }
@@ -566,42 +536,6 @@ void flushSendBuffer(ClientSocket& clientSock) {
 
     std::string payload(buf.begin(), buf.end());
     send(clientSock, 0, payload);
-}
-
-// ISN = M + F(localip, localport, remoteip, remoteport, secretkey) where
-// M is an ~4 microsecond timer and F() is the SipHash pseudorandom function
-// of the connection's identifying parameters and a secret key
-//
-// For more details, see the "Initial Sequence Number Selection" component
-// of RFC9293 Section 3.4.1, https://www.rfc-editor.org/rfc/rfc9293
-unsigned int TCPNode::generateISN(
-    std::string& srcAddr, 
-    unsigned int srcPort, 
-    std::string& destAddr, 
-    unsigned int destPort) {
-
-    uint32_t first = ip::address_v4::from_string(srcAddr).to_ulong();
-    uint32_t second = ip::address_v4::from_string(destAddr).to_ulong();
-    uint32_t third = (uint32_t)(srcPort) << 16 | (uint32_t)(destPort);
-    struct siphash_key key = generateSecretKey();
-    uint64_t hashVal = siphash_3u32(first, second, third, key);
-
-    auto curTime = std::chrono::system_clock::now().time_since_epoch();
-    auto timeNano = std::chrono::duration_cast<std::chrono::nanoseconds>(curTime).count();
-    return hashVal + (timeNano >> 6);
-}
-
-struct siphash_key TCPNode::generateSecretKey() {
-    static siphash_key key;
-    static std::once_flag flag;
-    std::call_once(flag, [](){
-        std::random_device rd;
-        std::mt19937 rd_gen(rd());
-        std::uniform_int_distribution<uint64_t> dis(0, UINT64_MAX);
-        key.key[0] = dis(rd_gen);
-        key.key[1] = dis(rd_gen);
-    });
-    return key;
 }
 
 // Returns a port number > 0 or -1 if a port cannot be allocated

@@ -11,7 +11,7 @@
 #include <netinet/tcp.h>
 
 #include <include/TCP/TCPSocket.h>
-#include "include/TCP/CircularBuffer.h"
+#include <include/TCP/CircularBuffer.h>
 
 const uint16_t RECV_WINDOW_SIZE = 65535;
 const int MAX_RETRANSMITS = 5;
@@ -133,25 +133,13 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             std::shared_ptr<struct tcphdr> tcp_header,
             std::string& payload
         );
-}
 
+        unsigned int generateISN(
+            std::string& srcAddr,
+            unsigned int srcPort,
+            std::string& destAddr,
+            unsigned int destPort
+        );
 
-struct ClientSocket {
-    // Could have per socket curSeq (might be the same as sendNext) and curAck number
-
-    // Could combine client and listen sockets 
-    // Have an enum indicating whether client or listen 
-    // Note that 4-tuple would be diffferent because listen destAddr = 0.0.0.0 and destPort = 0 
-    // Would have to create custom hash function for tuple 
-
-    // Methods that could go here 
-    // receive_TCP_packet -> receive looks up the appropriate socket and calls this
-    // create retransmitPackets method
-    // create send method that takes in flags to send with and data to send 
-    // TCP checksum calculation in here
-
-    // Modifications to TCPNode 
-    // Only 1 table instead of client_port_table and listen_port_Table 
-    // Change getClientSocket and getListenSocket to getSocket which loops 
-    // with the given 4-tuple first then with a 4-tuple where destAddr and destPort are 0
+        struct siphash_key generateSecretKey();
 };

@@ -3,7 +3,7 @@
 #include <iostream>
 #include <memory>
 
-#include "include/repl/REPL.h"
+#include "include/tools/REPL.h"
 #include "include/IP/IPCommands.h"
 #include "include/TCP/TCPNode.h"
 

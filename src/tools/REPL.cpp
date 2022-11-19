@@ -1,7 +1,7 @@
 #include <iostream>
 
-#include "include/repl/REPL.h"
-#include "include/repl/colors.h"
+#include "include/tools/REPL.h"
+#include "include/tools/colors.h"
 
 const int MAX_LINE_SIZE = 80;
 const int FUNC_NAME_SIZE = 40;

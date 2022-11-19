@@ -1,6 +1,3 @@
-#include "include/repl/REPL.h"
-#include "include/TCP/TCPNode.h"
-#include "include/TCP/TCPCommands.h"
 #include <iostream>
 #include <memory>
 #include <string>
@@ -8,8 +5,13 @@
 #include <fstream>
 #include <iomanip>
 #include <thread>
-#include "include/repl/colors.h"
+
 #include "third_party/bonsai.h"
+
+#include "include/tools/REPL.h"
+#include "include/tools/colors.h"
+#include "include/TCP/TCPNode.h"
+#include "include/TCP/TCPCommands.h"
 
 const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;

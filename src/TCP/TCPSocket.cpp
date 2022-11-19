@@ -2,9 +2,10 @@
 #include <list>
 #include <mutex>
 
+#include <include/tools/siphash.h>
 #include <include/TCP/TCPSocket.h>
 #include <include/TCP/TCPTuple.h>
-#include <inlcude/TCP/CircularBuffer.h>
+#include <include/TCP/CircularBuffer.h>
 
 TCPSocket::TCPSocket(std::string localAddr, uint16_t localPort, std::string remoteAddr, 
         uint16_t remotePort) : socketTuple(localAddr, localPort, destAddr, destPort) {}
@@ -83,8 +84,12 @@ void TCPSocket::sendTCPPacket(unsigned char sendFlags, std::string payload) {
     memcpy(&newPayload[0], tcpHeader.get(), sizeof(struct tcphdr));
     memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
 
-    // Call IP's send method to send packet
-    ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, TCP_PROTOCOL_NUMBER); 
+    // Check if sequence number is within receiver's window
+    if (tcpHeader->th_seq < unAck + sendWnd) {
+        // Call IP's send method to send packet
+        ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
+                        TCP_PROTOCOL_NUMBER); 
+    }
     if (tcpHeader->th_flags & (TH_SYN | TH_FIN)) {
         sendNext++;
     }
@@ -105,7 +110,37 @@ void TCPSocket::receiveTCPPacket(
     std::string& payload
 );
 
-void TCPSocket::retransmitPackets();
+void TCPSocket::retransmitPackets() {
+    auto curTime = std::chrono::steady_clock::now();
+    for (auto it = clientSock.retransmissionQueue.begin(); 
+            it != clientSock.retransmissionQueue.end(); it++) {
+        auto timeDiff = std::chrono::duration_cast<std::seconds>(curTime - it->retransmitTime).count();
+        if (timeDiff > it->retransmitInterval) {
+            // Exponential backoff for retransmission 
+            it->retransmitInterval *= 2;
+            it->numRetransmits++;
+
+            if (it->numRetransmits > clientSock.maxRetransmits) {
+                // Close socket 
+                retransmissionQueue.erase(it);
+                return;
+            }
+            it->retransmitTime = std::chrono::steady_clock::now();
+
+            // Retransmit packet if receiver window allows
+            uint32_t segEnd = (it->tcpHeader->th_seq + it->payload.size()) - 1;
+            if (segEnd < unAck + sendWnd) {
+                std::string newPayload = "";
+                newPayload.resize(sizeof(struct tcphdr));
+                memcpy(&newPayload[0], tcpHeader.get(), sizeof(struct tcphdr));
+                memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
+
+                ipNode->sendMsg(clientSock.destAddr, clientSock.srcAddr, newPayload, 
+                                TCP_PROTOCOL_NUMBER); 
+            }
+        }
+    }
+}
 
 std::shared_ptr<struct tcphdr> createTCPHeader(unsigned char flags, std::string payload) {
     std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
@@ -177,4 +212,40 @@ uint16_t TCPSocket::computeTCPChecksum(
 
     uint16_t checksum = ipNode->ip_sum(buffer, total_len);
     return checksum;
+}
+
+// ISN = M + F(localip, localport, remoteip, remoteport, secretkey) where
+// M is an ~4 microsecond timer and F() is the SipHash pseudorandom function
+// of the connection's identifying parameters and a secret key
+//
+// For more details, see the "Initial Sequence Number Selection" component
+// of RFC9293 Section 3.4.1, https://www.rfc-editor.org/rfc/rfc9293
+uint32_t TCPSocket::generateISN(
+    std::string& srcAddr, 
+    uint16_t srcPort, 
+    std::string& destAddr, 
+    uint16_t destPort) {
+
+    uint32_t first = ip::address_v4::from_string(srcAddr).to_ulong();
+    uint32_t second = ip::address_v4::from_string(destAddr).to_ulong();
+    uint32_t third = (uint32_t)(srcPort) << 16 | (uint32_t)(destPort);
+    struct siphash_key key = generateSecretKey();
+    uint64_t hashVal = siphash_3u32(first, second, third, key);
+
+    auto curTime = std::chrono::system_clock::now().time_since_epoch();
+    auto timeNano = std::chrono::duration_cast<std::chrono::nanoseconds>(curTime).count();
+    return hashVal + (timeNano >> 6);
+}
+
+struct siphash_key TCPSocket::generateSecretKey() {
+    static siphash_key key;
+    static std::once_flag flag;
+    std::call_once(flag, [](){
+        std::random_device rd;
+        std::mt19937 rd_gen(rd());
+        std::uniform_int_distribution<uint64_t> dis(0, UINT64_MAX);
+        key.key[0] = dis(rd_gen);
+        key.key[1] = dis(rd_gen);
+    });
+    return key;
 }

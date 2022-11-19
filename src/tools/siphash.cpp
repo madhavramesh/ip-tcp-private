@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include <include/repl/siphash.h>
+#include <include/tools/siphash.h>
 
 #define PREAMBLE(len)                                                               \
     uint64_t v0 = SIPHASH_CONST_0;                                                  \
