@@ -92,7 +92,8 @@ class TCPNode {
         void handleClient(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader, 
-            std::string payload);
+            std::string payload
+        );
 
     private:
         int nextSockId;
@@ -122,10 +123,16 @@ class TCPNode {
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader, 
             std::string payload,
-            int socketId);
+            int socketId
+        );
+
+        uint32_t calculateSegmentEnd(
+            std::shared_ptr<struct tcphdr> tcpHeader, 
+            std::string& payload
+        );
 
         // Allocates a random ephemeral port
-        uint16_t allocatePort();
+        uint16_t allocatePort(std::string& srcAddr, std::string& destAddr, uint16_t destPort);
 
         void tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 
