@@ -63,7 +63,7 @@ class TCPNode {
         // read is REQUIRED to block when there is no available data
         // All reads should return at least one data byte unless failure or eof occurs
         // Some possible failures : EBADF, EINVAL
-        int read(int socket, std::vector<char>& buf);
+        int read(int socket, std::string& buf);
 
         // shutdown an connection. If type is 1, close the writing part of
         // the socket (CLOSE call in the RFC. This should send a FIN, etc.)
@@ -88,6 +88,11 @@ class TCPNode {
 
 
         void retransmitPackets();
+
+        void handleClient(
+            std::shared_ptr<struct ip> ipHeader, 
+            std::shared_ptr<struct tcphdr> tcpHeader, 
+            std::string payload);
 
     private:
         int nextSockId;

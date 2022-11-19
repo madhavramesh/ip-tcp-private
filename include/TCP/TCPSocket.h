@@ -28,7 +28,7 @@ const int MAX_RETRANSMITS = 5;
 
 const int TCP_PROTOCOL_NUMBER = 6;
 
-class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
+class TCPSocket {
     public:
         enum class SocketState {
             LISTEN,
@@ -83,6 +83,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         void socket_connect();
 
         void addIncompleteConnection(std::shared_ptr<TCPSocket> newSock);
+        void addToWaitQueue(std::shared_ptr<struct TCPPacket>& tcpPacket);
 
         int read(int numBytes, std::string& buf);
         int write(int numBytes, std::string& payload);
@@ -94,16 +95,22 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             std::string& payload
         );
 
+        std::shared_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
+        uint32_t ackNum, std::string payload);
+
         void retransmitPackets();
 
+        void setUnack(uint32_t newUnack);
         void setSendWnd(uint16_t newSendWnd);
         void setSendWl1(uint32_t newSendWl1);
         void setSendWl2(uint32_t newSendWl2);
         void setAckNum(uint32_t newAckNum);
         void setSeqNum(uint32_t newSeqNum);
-
+        
+        uint32_t getUnack();
         uint32_t getSeqNum();
         uint32_t getAckNum();
+        uint16_t getSendNext();
         uint32_t getIss();
         uint32_t getIrs();
         uint16_t getSendWnd();
@@ -163,7 +170,6 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         // NOTE: Only used by listen sockets
         std::deque<std::shared_ptr<TCPSocket>> completeConns;                        // ESTABLISHED state
         std::unordered_map<TCPTuple, std::shared_ptr<TCPSocket>> incompleteConns;    // SYN-RECEIVED state
-        std::shared_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, std::string payload);
 
         uint16_t computeTCPChecksum(
             uint32_t virtual_ip_src,

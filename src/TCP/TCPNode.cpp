@@ -8,7 +8,7 @@
 #include <mutex>
 
 #include <netinet/tcp.h>
-
+#include "include/tools/colors.h"
 #include <include/TCP/TCPNode.h>
 #include <include/TCP/TCPSocket.h>
 #include <include/tools/siphash.h>
@@ -16,7 +16,7 @@
 // #todo fix
 int MAX_READ_SIZE = 65535;
 
-TCPNode::TCPNode(uint16_t port) : nextSockId(0), nextEphemeral(minPort), ipNode(std::make_shared<IPNode>(port)) {
+TCPNode::TCPNode(uint16_t port) : nextSockId(0), nextEphemeral(MIN_PORT), ipNode(std::make_shared<IPNode>(port)) {
 
     using namespace std::placeholders;
 
@@ -28,13 +28,14 @@ std::shared_ptr<TCPSocket> TCPNode::getSocket(const TCPTuple& socketTuple) {
     std::scoped_lock lk(sd_table_mutex);
 
     if (socket_tuple_table.count(socketTuple)) {
-        return socket_tuple_table[socketTuple];
+        int socketId = socket_tuple_table[socketTuple];
+        return sd_table[socketId];
     }
 
     // Try to find a listen socket
-    TCPTuple listenSocketTuple = SocketTuple(NULL_IPADDR, socketTuple.getSrcPort(), NULL_IPADDR, 0);
-    if (socket_tuple_table.count(listenSocket)) {
-        return socket_tuple_table[listenSocketTuple];
+    TCPTuple listenSocketTuple = TCPTuple(NULL_IPADDR, socketTuple.getSrcPort(), NULL_IPADDR, 0);
+    if (socket_tuple_table.count(listenSocketTuple)) {
+        return sd_table[socket_tuple_table[listenSocketTuple]];
     }
 
     return nullptr;
@@ -70,7 +71,7 @@ int TCPNode::listen(std::string& address, uint16_t port) {
 
     // Add socket to socket descriptor table
     sd_table.insert(std::make_pair(socketId, sock));
-    socket_tuple_table.insert(std::make_pair(sock.toTuple(), socketId));
+    socket_tuple_table.insert(std::make_pair((*sock).toTuple(), socketId));
 
     return socketId;
 }
@@ -95,7 +96,7 @@ int TCPNode::accept(int socket, std::string& address) {
     std::shared_ptr<TCPSocket> newSock = sock->socket_accept();
 
     // TODO: SHOULD I BE LOCKING sd_table HERE?
-    auto newSocketTuple = newSock.toTuple();
+    auto newSocketTuple = (*newSock).toTuple();
     if (socket_tuple_table.count(newSocketTuple)) {
         address = newSocketTuple.getDestAddr();
         return socket_tuple_table[newSocketTuple];
@@ -129,7 +130,7 @@ int TCPNode::connect(std::string& address, uint16_t port) {
     // Add to socket descriptor table
     int socketId = nextSockId++;
     sd_table.insert(std::make_pair(socketId, sock));
-    socket_tuple_table.insert(std::make_pair(sock.toTuple(), socketId));
+    socket_tuple_table.insert(std::make_pair((*sock).toTuple(), socketId));
 
     // TODO: SHOULD I BE LOCKING sd_table HERE?
     sock->socket_connect();
@@ -156,11 +157,11 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
             return -1;
         case TCPSocket::SocketState::SYN_SENT: 
         case TCPSocket::SocketState::SYN_RECV:
-            sock->addToWaitQueue(tcpHeader, payload);
+            sock->addToWaitQueue(tcpPacket); // #todo 
             return buf.size();
         case TCPSocket::SocketState::ESTABLISHED:
         case TCPSocket::SocketState::CLOSE_WAIT:
-            sock->sendTCPPacket(tcpHeader, payload);
+            sock->sendTCPPacket(tcpPacket);
             return buf.size();
         case TCPSocket::SocketState::FIN_WAIT1:
         case TCPSocket::SocketState::FIN_WAIT2:
@@ -184,7 +185,7 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
  * @param buf 
  * @return int 
  */
-int TCPNode::read(int socket, std::vector<char>& buf) {
+int TCPNode::read(int socket, std::string& buf) {
     // Find socket
     auto sockIt = sd_table.find(socket);
     if (sockIt == sd_table.end()) {
@@ -205,10 +206,10 @@ int TCPNode::read(int socket, std::vector<char>& buf) {
         case TCPSocket::SocketState::FIN_WAIT1:
         case TCPSocket::SocketState::FIN_WAIT2:
             // do something
-            return sock.read(MAX_READ_SIZE, buf);
+            return sock->read(MAX_READ_SIZE, buf);
         case TCPSocket::SocketState::CLOSE_WAIT:
             // do something
-            return sock.read(MAX_READ_SIZE, buf); // #todo check this, not sure correct
+            return sock->read(MAX_READ_SIZE, buf); // #todo check this, not sure correct
         case TCPSocket::SocketState::CLOSING:
         case TCPSocket::SocketState::LAST_ACK:
         case TCPSocket::SocketState::TIME_WAIT:
@@ -235,10 +236,10 @@ void TCPNode::shutdown(int socket, int type) {
         case 1: // Close writing part, send FIN
             return;
 
-        case 2; // Close reading part
+        case 2: // Close reading part
             return;
 
-        case 3; // Close both
+        case 3: // Close both
             return;
 
         default:
@@ -345,11 +346,9 @@ void TCPNode::handleClient(
                 // important, function should not return here!
                 // that way, any payload can be processed in the syn-received state
                 } else {
-                    // Drop segment
-                    return;
-                }
+                // Drop segment
+                return;
             }
-
         } 
 
         // Else search in client port table
@@ -357,9 +356,9 @@ void TCPNode::handleClient(
             return;
         }
 
-        auto clientSocketIt = getClientSocket(srcAddr, srcPort, destAddr, destPort, 
-                                            client_port_table[destPort]);
-        if (clientSocketIt == client_port_table[destPort].end()) {
+        auto clientSocketIt = getClientSocket(socketTuple.getSrcAddr(), socketTuple.getSrcPort(), socketTuple.getDestAddr(), socketTuple.getDestPort();
+                                            client_port_table[socketTuple.getDestPort()]);
+        if (clientSocketIt == client_port_table[socketTuple.getDestPort()].end()) {
             return; // Dest port exists but socket not found
         }
         
@@ -381,7 +380,7 @@ void TCPNode::handleClient(
                 // If SEG.ACK =< ISS or SEG.ACK > SND.NXT, send a reset (unless the RST bit is set, if so drop the segment and return)
                 // <SEQ=SEG.ACK><CTL=RST>
                 // and discard the segment. Return.
-                if (tcpHeader->th_ack <= clientSock.iss || tcpHeader->th_ack > clientSock.sendNext) {
+                if (tcpHeader->th_ack <= clientSock.iss || tcpHeader->th_ack > clientSock.getSendNext()) {
                     if (tcpHeader->th_flags & TH_RST) {
                         return;
                     } else {
@@ -428,14 +427,15 @@ void TCPNode::handleClient(
                 clientSock.recvBuffer.incrementNext(1); // why not th_seq + payload size? #todo
                 clientSock.irs = tcpHeader->th_seq;
                 if (ackBitSet) {
-                    clientSock.unAck = tcpHeader->th_ack;
+                    clientSock.setUnack(tcpHeader->th_ack);
                 }
                 // #todo transmission queue stuff 
+                clientSock.receiveTCPPacket()
 
                 // "If SND.UNA > ISS (our SYN has been ACKed), change the connection state to ESTABLISHED, form an ACK segment
                 // <SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>
                 // and send it"
-                if (clientSock.unAck > clientSock.iss) {
+                if (clientSock.getUnack() > clientSock.iss) {
                     clientSock.setState(TCPSocket::SocketState::ESTABLISHED);
                     auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), getAckNum(), "");
                     clientSock.sendTCPPacket(tcpPacket);
@@ -600,7 +600,7 @@ void TCPNode::handleClient(
         tcp_seq ack = tcpHeader->th_ack;
         
         if (ackBitSet && clientSock.getState() == TCPSocket::SocketState::SYN_RECV) {
-            if (clientSock.unAck < ack && ack <= clientSock.sendNext) { // #todo double check
+            if (clientSock.getUnack < ack && ack <= clientSock.getSendNext()) { // #todo double check
                 clientSock.setState(TCPSocket::SocketState::ESTABLISHED);
                 clientSock.sndWnd = tcpHeader->th_win;
 
@@ -625,13 +625,13 @@ void TCPNode::handleClient(
             clientSock.getState() == TCPSocket::SocketState::CLOSING)) {
 
                 // Update unAck, if needed
-                if (clientSock.unAck < ack && ack <= clientSock.sendNext) { 
+                if (clientSock.unAck < ack && ack <= clientSock.getSendNext()) { 
                     // If ACK follows within the window, then it is valid
                     // Update ack 
                     clientSock.unAck = ack;
 
                     // #todo handle retransmission queue: remove those that have been acked
-                } else if (ack > clientSock.sendNext) {
+                } else if (ack > clientSock.getSendNext()) {
                     // This is reached if an ack has been received for something that hasn't even 
                     // been sent yet.
                     // Send an ack w/ old seq and ack nums
@@ -641,7 +641,7 @@ void TCPNode::handleClient(
                 }
 
                 // Update send window, if needed
-                if (clientSock.unAck <= ack && ack <= clientSock.sendNext) {
+                if (clientSock.unAck <= ack && ack <= clientSock.getSendNext()) {
                     // If (SND.WL1 < SEG.SEQ or (SND.WL1 = SEG.SEQ and SND.WL2 =< SEG.ACK)), 
                     // set SND.WND <- SEG.WND, set SND.WL1 <- SEG.SEQ, and set SND.WL2 <- SEG.ACK.
                     if (clientSock.getSendWl1() < tcpHeader->th_seq || 
@@ -658,7 +658,7 @@ void TCPNode::handleClient(
                 // FIN-WAIT-1
                 if (clientSock.getState() == TCPSocket::SocketState::FIN_WAIT1) {
                     // If our FIN segment we previously sent was acknowledged, move to FIN_WAIT2
-                    if (ack == clientSock.sendNext) { // #todo double check this logic
+                    if (ack == clientSock.getSendNext()) { // #todo double check this logic
                         clientSock.setState(TCPSocket::SocketState::FIN_WAIT2);
                     }
                 }
@@ -674,7 +674,7 @@ void TCPNode::handleClient(
 
                 if (clientSock.getState() == TCPSocket::SocketState::CLOSING) {
                     // If the ACK acknowledges our FIN, enter the TIME-WAIT state; otherwise, ignore the segment
-                    if (ack == clientSock.sendNext) { // #todo double check this logic
+                    if (ack == clientSock.getSendNext()) { // #todo double check this logic
                         clientSock.setState(TCPSocket::SocketState::TIME_WAIT);
                     }
                 }
@@ -684,7 +684,7 @@ void TCPNode::handleClient(
             // The only thing that can arrive in this state is an 
             // acknowledgment of our FIN. If our FIN is now acknowledged, 
             // delete the TCB, enter the CLOSED state, and return.
-            if (ack == clientSock.sendNext) { // #todo double check this logic
+            if (ack == clientSock.getSendNext()) { // #todo double check this logic
                 clientSock.setState(TCPSocket::SocketState::CLOSED);
                 return;
             }
@@ -779,7 +779,7 @@ void TCPNode::handleClient(
                 // If our FIN has been ACKed (perhaps in this segment), 
                 // then enter TIME-WAIT, start the time-wait timer, turn off the other timers; 
                 // otherwise, enter the CLOSING state.
-                if (ack == clientSock.sendNext) { // #todo double check this logic
+                if (ack == clientSock.getSendNext()) { // #todo double check this logic
                     clientSock.setState(TCPSocket::SocketState::TIME_WAIT);
                     // #todo start timer
                 } else {
@@ -840,16 +840,16 @@ void TCPNode::receive(
     // return listenSockets;
 // }
 //
-void flushSendBuffer(TCPSocket& clientSock) {
-    int cap = clientSock.sendBuffer.getCapacity();
-    int sendWindowSize = cap - clientSock.sendBuffer.getWindowSize();
+void flushSendBuffer(TCPSocket& clientSock) { // #todo: reimplement
+    // int cap = clientSock.sendBuffer.getCapacity();
+    // int sendWindowSize = cap - clientSock.sendBuffer.getWindowSize();
 
-    std::vector<char> buf(sendWindowSize);
-    int numCopied = clientSock.sendBuffer.getNumBytes(sendWindowSize, buf);
+    // std::vector<char> buf(sendWindowSize);
+    // int numCopied = clientSock.sendBuffer.getNumBytes(sendWindowSize, buf);
 
-    std::string payload(buf.begin(), buf.end());
-    auto tcpPacket = clientSock.createTCPPacket(TH_ACK, 0, clientSock.getAckNum(), payload);
-    clientSock.sendTCPPacket(tcpPacket);
+    // std::string payload(buf.begin(), buf.end());
+    // auto tcpPacket = clientSock.createTCPPacket(TH_ACK, 0, clientSock.getAckNum(), payload);
+    // clientSock.sendTCPPacket(tcpPacket);
 }
 
 // Returns a port number > 0 or -1 if a port cannot be allocated

@@ -6,7 +6,7 @@
 #include <iomanip>
 #include <thread>
 
-#include "third_party/bonsai.h"
+// #include "third_party/bonsai.h"
 
 #include "include/tools/REPL.h"
 #include "include/tools/colors.h"
@@ -47,67 +47,67 @@ TCPCommands::TCPCommands(std::shared_ptr<TCPNode> node) : tcpNode(node), IPComma
 
 // Prints out the socket information
 void TCPCommands::sockets(std::string& args) {
-    // Topmost column names
-    std::vector<std::string> colNames = { "socket", "local-addr", "port", "dst-addr", "port", "status"};
+    // // Topmost column names
+    // std::vector<std::string> colNames = { "socket", "local-addr", "port", "dst-addr", "port", "status"};
 
-    // Print out top row
-    std::ostringstream interfaceString;
-    for (auto& colName : colNames) {
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << colName << " ";
-    }
-    interfaceString << std::endl;
+    // // Print out top row
+    // std::ostringstream interfaceString;
+    // for (auto& colName : colNames) {
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << colName << " ";
+    // }
+    // interfaceString << std::endl;
 
-    // Print out divider
-    for (int i = 0; i < colNames.size(); i++) {
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << "----------";
-    }
-    interfaceString << std::endl;
+    // // Print out divider
+    // for (int i = 0; i < colNames.size(); i++) {
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "----------";
+    // }
+    // interfaceString << std::endl;
 
-    // For each socket, print out the socket information
-    std::vector<std::tuple<int, TCPSocket>> clientSockets = tcpNode->getClientSockets();
-    // #todo fix
-    // std::vector<std::tuple<int, TCPSocket>> listenSockets = tcpNode->getListenSockets();
+    // // For each socket, print out the socket information
+    // std::vector<std::tuple<int, TCPSocket>> clientSockets = tcpNode->getClientSockets();
+    // // #todo fix
+    // // std::vector<std::tuple<int, TCPSocket>> listenSockets = tcpNode->getListenSockets();
 
-    // for (auto listenSocket : listenSockets) {
-    //     int socketID = std::get<0>(listenSocket);
-    //     TCPSocket socket = std::get<1>(listenSocket);
+    // // for (auto listenSocket : listenSockets) {
+    // //     int socketID = std::get<0>(listenSocket);
+    // //     TCPSocket socket = std::get<1>(listenSocket);
+    // //     TCPTuple tuple = socket.toTuple();
+    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << std::get<0>(socketID) << " ";
+    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcAddr() << " ";
+    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcPort() << " ";
+    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "0.0.0.0" << " ";
+    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "0" << " ";
+    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "LISTEN" << " ";
+    // //     interfaceString << std::endl;
+    // // }
+
+    // for (auto clientSocket : clientSockets) {
+    //     int socketID = std::get<0>(clientSocket);
+    //     TCPSocket socket = std::get<1>(clientSocket);
     //     TCPTuple tuple = socket.toTuple();
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << std::get<0>(socketID) << " ";
+
+
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << socketID << " ";
     //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcAddr() << " ";
     //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcPort() << " ";
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "0.0.0.0" << " ";
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "0" << " ";
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "LISTEN" << " ";
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getDestAddr() << " ";
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getDestPort() << " ";
+    //     // interfaceString << std::setw(INTERFACE_COL_SIZE) << SocketStateString[socket.getState()] << " ";
+    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "#todo" << " ";
     //     interfaceString << std::endl;
     // }
 
-    for (auto clientSocket : clientSockets) {
-        int socketID = std::get<0>(clientSocket);
-        TCPSocket socket = std::get<1>(clientSocket);
-        TCPTuple tuple = socket.toTuple();
+    // // Print to file if specified
+    // int spaceIdx = args.find(' ');
+    // std::string filename = args.substr(0, spaceIdx);
+    // if (filename.empty()) {
+    //     std::cout << dim << interfaceString.str() << dim_reset;
+    // } else {
+    //     std::ofstream file(filename);
 
-
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketID << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcAddr() << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcPort() << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getDestAddr() << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getDestPort() << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << SocketStateString[socket.getState()] << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << "#todo" << " ";
-        interfaceString << std::endl;
-    }
-
-    // Print to file if specified
-    int spaceIdx = args.find(' ');
-    std::string filename = args.substr(0, spaceIdx);
-    if (filename.empty()) {
-        std::cout << dim << interfaceString.str() << dim_reset;
-    } else {
-        std::ofstream file(filename);
-
-        file << interfaceString.str();
-        file.close();
-    }
+    //     file << interfaceString.str();
+    //     file.close();
+    // }
 }
 
 void TCPCommands::accept_loop(int sockClient, int sockListener, std::string address) {
@@ -290,11 +290,11 @@ void TCPCommands::recvfile(std::string& args) {
 
 // bonsai
 void TCPCommands::quit(std::string& args) {
-     int argc = 2;
-    char *argv[] = {"bonsai", "-l", NULL};
-    // argv[1] = ;
-    runBonsai(argc, argv);
-    // execv("third_party/bonsai", argv);
+    // int argc = 2;
+    // char *argv[] = {"bonsai", "-l", NULL};
+    // // argv[1] = ;
+    // runBonsai(argc, argv);
+    // // execv("third_party/bonsai", argv);
     exit(0);
 }
 

@@ -43,6 +43,13 @@ void TCPSocket::setWl2(uint32_t newSendWl2) {
     sendWl2 = newSendWnd;
 }
 
+void TCPSocket::setUnack(uint32_t newUnack) {
+    unack = newUnack;
+}
+
+uint32_t TCPSocket::getUnack() {
+    return unack;
+}
 
 uint32_t TCPSocket::getSeqNum() {
     return sendNext;
@@ -52,6 +59,9 @@ uint32_t TCPSocket::getAckNum() {
     return recvBuffer->getNext();
 }
 
+uint32_t TCPSocket::getSendNext() {
+    return sendNext;
+}
 uint32_t TCPSocket::getIss() {
     return iss;
 }
@@ -106,9 +116,9 @@ void TCPSocket::socket_connect() {
     unAck = iss;
     sendNext = iss + 1;
 
-    // Create TCP header and send SYN 
-    auto tcpHeader = createTCPHeader(TH_SYN, iss, 0, "");
-    sendTCPPacket(tcpHeader, "");
+    // Create TCP packet and send SYN 
+    auto tcpPacket = createTCPPacket(TH_SYN, iss, 0, "");
+    sendTCPPacket(tcpPacket);
 }
 
 void TCPSocket::addIncompleteConnection(std::shared_ptr<TCPSocket> newSock) {
@@ -145,11 +155,7 @@ int TCPSocket::write(int numBytes, std::string& payload) {
     return recvBuffer.write(numBytes, payload);
 }
 
-void TCPSocket::addToWaitQueue(std::shared_ptr<struct tcphdr> tcpHeader, std::string payload) {
-
-    std::unique_ptr<struct TCPPacket> tcpPacket = std::make_unique<TCPPacket>();
-    tcpPacket->tcpHeader = tcpHeader;
-    tcpPacket->payload = payload;
+void TCPSocket::addToWaitQueue(std::shared_ptr<struct TCPPacket>& tcpPacket) {
 
     waitToSendQueue.push_back(tcpPacket);
 }
@@ -221,7 +227,7 @@ void TCPSocket::retransmitPackets() {
     }
 }
 
-std::shared_ptr<struct TCPPacket> TCPSocket::createTCPHeader(unsigned char flags, uint32_t seqNum, 
+std::shared_ptr<struct TCPPacket> TCPSocket::createTCPPacket(unsigned char flags, uint32_t seqNum, 
         uint32_t ackNum, std::string payload) {
 
     std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
