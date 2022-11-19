@@ -1,21 +1,40 @@
 #include <string>
+#include <sys/socket.h>
+#include <unordered_map>
 #include <random>
 #include <chrono>
 #include <thread>
 #include <condition_variable>
 #include <mutex>
+
 #include <netinet/tcp.h>
 
-#include <include/TCP/CircularBuffer.h>
 #include <include/TCP/TCPNode.h>
+#include <include/TCP/TCPSocket.h>
 #include <include/repl/siphash.h>
 
-TCPNode::TCPNode(unsigned int port) : nextSockId(0), nextEphemeral(minPort), ipNode(std::make_shared<IPNode>(port)) {
+TCPNode::TCPNode(uint16_t port) : nextSockId(0), nextEphemeral(minPort), ipNode(std::make_shared<IPNode>(port)) {
 
     using namespace std::placeholders;
 
     auto tcpFunc = std::bind(&TCPNode::tcpHandler, this, _1, _2);
     ipNode->registerHandler(6, tcpFunc);
+}
+
+std::shared_ptr<TCPSocket> TCPNode::getSocket(const TCPTuple& socketTuple) {
+    std::scoped_lock lk(sd_table_mutex);
+
+    if (socket_tuple_table.count(socketTuple)) {
+        return socket_tuple_table[socketTuple];
+    }
+
+    // Try to find a listen socket
+    TCPTuple listenSocketTuple = SocketTuple(NULL_IPADDR, socketTuple.getSrcPort(), NULL_IPADDR, 0);
+    if (socket_tuple_table.count(listenSocket)) {
+        return socket_tuple_table[listenSocketTuple];
+    }
+
+    return nullptr;
 }
 
 /**
@@ -27,27 +46,30 @@ TCPNode::TCPNode(unsigned int port) : nextSockId(0), nextEphemeral(minPort), ipN
  * @param port 
  * @return int 
  */
-int TCPNode::listen(std::string& address, unsigned int port) {
-    // Create new ListenSocket
-    ListenSocket listenerSock;
-    listenerSock.id = nextSockId++; // #todo put mutex
-    listenerSock.state = SocketState::LISTEN;
-    listenerSock.srcAddr = "";
-    listenerSock.srcPort = port;
-
-    // #todo should try and check if address exists or if its nil/0
+int TCPNode::listen(std::string& address, uint16_t port) {
+    // User ports must be above MIN_PORT
     if (port < MIN_PORT) {
         return -1;
     }
 
-    // Adds socket to map of listener sockets
-    if (listen_port_table.find(port) != listen_port_table.end()) {
+    // Check that port is not already bound
+    TCPTuple socketTuple = TCPTuple(NULL_IPADDR, port, NULL_IPADDR, 0);
+    if (getSocket(socketTuple)) {
         return -1;
-    } 
+    }
 
-    listen_sd_table.insert(std::pair<int, ListenSocket>(listenerSock.id, listenerSock));
-    listen_port_table[port].push_front(listenerSock.id);
-    return listenerSock.id;
+    // Create new listener socket
+    std::shared_ptr<TCPSocket> sock = std::make_shared<TCPSocket>(socketTuple);
+    sock->socket_listen();
+
+    std::scoped_lock lk(sd_table_mutex);
+    int socketId = nextSockId++;
+
+    // Add socket to socket descriptor table
+    sd_table.insert(std::make_pair(socketId, sock));
+    socket_tuple_table.insert(std::make_pair(sock.toTuple(), socketId));
+
+    return socketId;
 }
 
 /**
@@ -59,54 +81,28 @@ int TCPNode::listen(std::string& address, unsigned int port) {
  */
 int TCPNode::accept(int socket, std::string& address) {
     // Grab listener socket, if it exists
-    auto listenSockIt = listen_sd_table.find(socket);
-    if (listenSockIt == listen_sd_table.end()) {
+    auto sockIt = sd_table.find(socket);
+    if (sockIt == sd_table.end()) {
         std::cerr << "error: socket " << socket << " could not be found" << std::endl;
         return -1;
     }
 
-    ListenSocket& listenSock = listenSockIt->second;
+    // NOTE: Newly accepted TCPSocket should already exist in socket descriptor table
+    std::shared_ptr<TCPSocket> sock = sockIt->second;
+    std::shared_ptr<TCPSocket> newSock = sock->socket_accept();
 
-    // Accept blocks until connection is found (with condition variable)
-    std::unique_lock<std::mutex> lk(accept_mutex);
-    while (listenSock.completeConns.empty()) {
-        accept_cond.wait(lk);
+    // TODO: SHOULD I BE LOCKING sd_table HERE?
+    auto newSocketTuple = newSock.toTuple();
+    if (socket_tuple_table.count(newSocketTuple)) {
+        address = newSocketTuple.getDestAddr();
+        return socket_tuple_table[newSocketTuple];
     }
 
-    // Remove the socket from completed connections
-    int clientSocketDescriptor = listenSock.completeConns.front();
-    listenSock.completeConns.pop_front();
-
-    lk.unlock();
-
-    ClientSocket& newClientSock = client_sd_table[clientSocketDescriptor];
-
-    // // Add socket to client_sd table
-    // int srcPort = newClientSock.srcPort;
-    // if (client_port_table.find(srcPort) == client_port_table.end()) {
-    //     // Create new entry
-    //     // #todo remove this at end
-    //     std::cerr << "this should never be reached!" << std::endl;
-    //     client_port_table[srcPort].push_front(clientSocketDescriptor);
-    // } else {
-    //     // Update old entry
-    //     client_port_table.find(srcPort)->second.push_back(clientSocketDescriptor);
-    // }
-
-    // Set address
-    address = newClientSock.destAddr; // #todo, double check if dst or src, figure out why this is needed
-
-    return newClientSock.id;
+    address = "";
+    return -1;
 }   
 
-int TCPNode::connect(std::string& address, unsigned int port) {
-    ClientSocket clientSock;
-    clientSock.id = nextSockId++;
-    clientSock.activeOpen = true;
-    clientSock.state = SocketState::SYN_SENT;
-    clientSock.destAddr = address;
-    clientSock.destPort = port;
-    
+int TCPNode::connect(std::string& address, uint16_t port) {
     // Randomly select an interface to use as srcAddr
     auto interfaces = ipNode->getInterfaces();
     if (interfaces.empty()) {
@@ -118,90 +114,60 @@ int TCPNode::connect(std::string& address, unsigned int port) {
     int randomInterface = dis(rd_gen) % interfaces.size();
 
     Interface interface = std::get<0>(interfaces[randomInterface]);
-    clientSock.srcAddr = interface.srcAddr;
+    std::string srcAddr = interface.srcAddr;
 
-    // Randomly select a port to use as srcPort
-    // NOTE: Inefficient when large number of ports are being used
-
-    int count = MAX_PORT - MIN_PORT + 1;
-    while (count > 0) {
-        if (!client_port_table.count(nextEphemeral) && !listen_port_table.count(nextEphemeral)) {
-            break;
-        }
-        nextEphemeral = ((nextEphemeral + 1) % (MAX_PORT - MIN_PORT)) + MIN_PORT;
-        count--;
-    }
-
-    if (count == 0) {
+    uint16_t srcPort = allocatePort();
+    if (srcPort < 0) {
         return -1;
     }
-    clientSock.srcPort = ephemeralPort;
 
-    // Set appropriate windows 
-    clientSock.sendWnd = RECV_WINDOW_SIZE;
-    clientSock.sendWl1 = 0;
-    clientSock.sendWl2 = 0;
+    std::shared_ptr<TCPSocket> sock = std::make_shared<TCPSocket>(srcAddr, srcPort, address, port);
 
-    // Generate ISN 
-    clientSock.iss = generateISN(clientSock.srcAddr, clientSock.srcPort, clientSock.destAddr, 
-                                 clientSock.destPort);
-    clientSock.irs = 0;
-    clientSock.maxRetransmits = MAX_RETRANSMITS;
-    clientSock.unAck = clientSock.iss;
-    clientSock.sendNext = clientSock.iss + 1;
-    
-    // Set up send and receive buffers
-    clientSock.recvBuffer = TCPCircularBuffer(RECV_WINDOW_SIZE);
+    // Add to socket descriptor table
+    int socketId = nextSockId++;
+    sd_table.insert(std::make_pair(socketId, sock));
+    socket_tuple_table.insert(std::make_pair(sock.toTuple(), socketId));
 
-    client_sd_table.insert(std::make_pair(clientSock.id, clientSock));
-    client_port_table[clientSock.srcPort].push_front(clientSock.id);
-
-    // Create TCP Header and send SYN
-    send(clientSock, TH_SYN, clientSock.iss, 0, "");
-    return nextSockId - 1;
+    // TODO: SHOULD I BE LOCKING sd_table HERE?
+    sock->socket_connect();
+    return socketId;
 }
 
-void TCPNode::send(ClientSocket& clientSock, 
-        unsigned char sendFlags, int seqNum, int ackNum, std::string payload) {
-    // #todo handle splitting packets i.e. less than max tcp packet size
+int TCPNode::write(int socket, std::vector<char>& buf) {
+    // TODO: handle splitting packets i.e. less than max tcp packet size
 
-    std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
-    tcpHeader->th_sport = htons(clientSock.srcPort);
-    tcpHeader->th_dport = htons(clientSock.destPort);
-    tcpHeader->th_seq = htonl(seqNum);
-    tcpHeader->th_ack = htonl(ackNum);
-    tcpHeader->th_flags = sendFlags;
-
-    int windowSize = clientSock.recvBuffer.getWindowSize();
-    tcpHeader->th_win = htons(windowSize);
-    tcpHeader->th_off = 5;
-    tcpHeader->th_sum = 0; 
-    tcpHeader->th_urp = 0;
-
-    // Compute checksum
-    uint32_t srcIp = inet_addr(clientSock.srcAddr.c_str());
-    uint32_t destIp = inet_addr(clientSock.destAddr.c_str());
-    tcpHeader->th_sum = computeTCPChecksum(srcIp, destIp, tcpHeader, payload);
-
-    std::string newPayload = "";
-    newPayload.resize(sizeof(struct tcphdr));
-    memcpy(&newPayload[0], tcpHeader.get(), sizeof(struct tcphdr));
-    memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
-
-    // Call IP's send method to send packet
-    ipNode->sendMsg(clientSock.destAddr, clientSock.srcAddr, newPayload, TCP_PROTOCOL_NUMBER); 
-    if (tcpHeader->th_flags & (TH_SYN | TH_FIN)) {
-        clientSock.sendNext++;
+    // Check if socket descriptor exists
+    auto sockIt = sd_table.find(socket);
+    if (sockIt == sd_table.end()) {
+        std::cerr << red << "error: connection does not exist" << color_reset << std::endl;
+        return -1
     }
-    clientSock.sendNext += payload.size();
 
-    // Add to retranmission queue
-    struct RetransmitPacket retransmitPacket;
-    retransmitPacket.tcpHeader = tcpHeader;
-    retransmitPacket.payload = payload;
-    retransmitPacket.time = std::chrono::steady_clock::now();
-
-    clientSock.retransmissionQueue.push_back(retransmitPacket);
+    std::shared_ptr<TCPSocket> sock = sockIt->second;
+    switch (sock->getState()) {
+        case TCPSocket::SocketState::LISTEN:
+            std::cerr << red << "error: remote socket unspecified" << color_reset << std::endl;
+            return -1;
+        case TCPSocket::SocketState::SYN_SENT: 
+        case TCPSocket::SocketState::SYN_RECV:
+            sock->addToWaitQueue(TH_ACK, payload);
+            return buf.size();
+        case TCPSocket::SocketState::ESTABLISHED:
+        case TCPSocket::SocketState::CLOSE_WAIT:
+            std::string payload(buf.begin(), buf.end());
+            sock->sendTCPPacket(TH_ACK, payload);
+            return buf.size();
+        case TCPSocket::SocketState::FIN_WAIT1:
+        case TCPSocket::SocketState::FIN_WAIT2:
+        case TCPSocket::SocketState::CLOSING:
+        case TCPSocket::SocketState::LAST_ACK:
+        case TCPSocket::SocketState::TIME_WAIT:
+            std::cerr << red << "error: connection closing" << color_reset << std::endl;
+            return -1;
+        default:
+            std::cerr << red << "error: unknown state reached" << color_reset << std::endl;
+            return -1;
+    }
 }
 
 void TCPNode::retransmitPackets() {
@@ -483,136 +449,22 @@ void TCPNode::receive(
     }
 }
 
-void TCPNode::receiveSYN(std::shared_ptr<struct ip> ipHeader,
-        std::shared_ptr<struct tcphdr> tcpHeader) {
-
-    // Get 4-tuple (srcAddr, srcPort, destAddr, destPort)
-    auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
-
-    // Check if listen socket exists
-    auto listenSocketsIt = listen_port_table.find(destPort);
-    if (listenSocketsIt == listen_port_table.end()) {
-        return;
-    }
-
-    auto listenSocketIt = getListenSocket(destPort, listenSocketsIt->second);
-    if (listenSocketIt == listenSocketsIt->second.end()) {
-        return;
-    }
-    ListenSocket& listenSock = listen_sd_table[*listenSocketIt];
-
-    // Create new socket
-    ClientSocket clientSock;
-    clientSock.id = nextSockId++;
-    clientSock.activeOpen = false;
-    clientSock.state = SocketState::SYN_RECV;
-    clientSock.destAddr = srcAddr;
-    clientSock.destPort = srcPort;
-    clientSock.srcAddr = destAddr;
-    clientSock.srcPort = destPort;
-    clientSock.iss = generateISN(clientSock.srcAddr, clientSock.srcPort, clientSock.destAddr,
-                                     clientSock.destPort);
-    clientSock.ackNum = ntohl(tcpHeader->th_seq) + 1;
-    clientSock.sendBuffer = TCPCircularBuffer(SEND_WINDOW_SIZE);
-    clientSock.recvBuffer = TCPCircularBuffer(RECV_WINDOW_SIZE);
-
-    // Add new socket to socket table
-    client_sd_table.insert(std::make_pair(clientSock.id, clientSock));
-    client_port_table[clientSock.srcPort].push_front(clientSock.id);
-
-    // Add socket to corresponding listening socket's incomplete connections
-    listenSock.incompleteConns.push_front(clientSock.id);
-
-    // Send SYN + ACK
-    send(clientSock, TH_SYN | TH_ACK, "");
-}
-
-void TCPNode::receiveSYNACK(std::shared_ptr<struct ip> ipHeader, 
-        std::shared_ptr<struct tcphdr> tcpHeader) {
-
-    // Get 4-tuple (srcAddr, srcPort, destAddr, destPort)
-    auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
-
-    if (!client_port_table.count(destPort)) {
-        return;
-    }
-
-    auto clientSocketIt = getClientSocket(srcAddr, srcPort, destAddr, destPort, 
-                                          client_port_table[destPort]);
-    if (clientSocketIt == client_port_table[destPort].end()) {
-        return;
-    }
-
-    // Send ACK
-    int clientSockDescriptor = *clientSocketIt;
-    if (clientSockDescriptor != -1) {
-        ClientSocket& clientSock = client_sd_table[clientSockDescriptor];
-        if (clientSock.state == SocketState::SYN_SENT) {
-            clientSock.state = SocketState::ESTABLISHED;
-            clientSock.seqNum = tcpHeader->th_ack;
-            clientSock.ackNum = tcpHeader->th_seq + 1;
-
-            send(clientSock, TH_ACK, "");
-        }
-    }
-}
-
-void TCPNode::receiveACK(std::shared_ptr<struct ip> ipHeader,
-        std::shared_ptr<struct tcphdr> tcpHeader) {
-
-    // Get 4-tuple (srcAddr, srcPort, destAddr, destPort)
-    auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
-
-    // Check if listen socket exists
-    auto listenSocketsIt = listen_port_table.find(destPort);
-    if (listenSocketsIt == listen_port_table.end()) {
-        return;
-    }
-
-    auto listenSocketIt = getListenSocket(destPort, listenSocketsIt->second);
-    if (listenSocketIt == listenSocketsIt->second.end()) {
-        return;
-    }
-    ListenSocket& listenSock = listen_sd_table[*listenSocketIt];
-
-    // Change state to ESTABLISHED
-    auto clientSocketIt = getClientSocket(srcAddr, srcPort, destAddr, destPort, 
-                                           listenSock.incompleteConns);
-
-    if (clientSocketIt != listenSock.incompleteConns.end()) {
-        ClientSocket& clientSock = client_sd_table[*clientSocketIt];
-        if (clientSock.state == SocketState::SYN_RECV) {
-            clientSock.state = SocketState::ESTABLISHED;
-            clientSock.seqNum = tcpHeader->th_ack;
-            clientSock.ackNum = tcpHeader->th_seq + 1;
-    
-            // Remove from incomplete connections
-            listenSock.incompleteConns.erase(clientSocketIt);
-
-            // Add to completed connections
-            std::unique_lock<std::mutex> lock(accept_mutex);
-            listenSock.completeConns.push_front(clientSock.id);
-            accept_cond.notify_one();
-        }
-    }
-}
-
-std::vector<std::tuple<int, ClientSocket>> TCPNode::getClientSockets() {
-    std::vector<std::tuple<int, ClientSocket>> clientSockets;
-    for (auto& clientSock : client_sd_table) {
-        clientSockets.push_back(std::make_tuple(clientSock.first, clientSock.second));
-    }
-    return clientSockets;
-}
-
-std::vector<std::tuple<int, ListenSocket>> TCPNode::getListenSockets() {
-    std::vector<std::tuple<int, ListenSocket>> listenSockets;
-    for (auto& listenSock : listen_sd_table) {
-        listenSockets.push_back(std::make_tuple(listenSock.first, listenSock.second));
-    }
-    return listenSockets;
-}
-
+// std::vector<std::tuple<int, ClientSocket>> TCPNode::getClientSockets() {
+    // std::vector<std::tuple<int, ClientSocket>> clientSockets;
+    // for (auto& clientSock : client_sd_table) {
+        // clientSockets.push_back(std::make_tuple(clientSock.first, clientSock.second));
+    // }
+    // return clientSockets;
+// }
+//
+// std::vector<std::tuple<int, ListenSocket>> TCPNode::getListenSockets() {
+    // std::vector<std::tuple<int, ListenSocket>> listenSockets;
+    // for (auto& listenSock : listen_sd_table) {
+        // listenSockets.push_back(std::make_tuple(listenSock.first, listenSock.second));
+    // }
+    // return listenSockets;
+// }
+//
 void flushSendBuffer(ClientSocket& clientSock) {
     int cap = clientSock.sendBuffer.getCapacity();
     int sendWindowSize = cap - clientSock.sendBuffer.getWindowSize();
@@ -622,57 +474,6 @@ void flushSendBuffer(ClientSocket& clientSock) {
 
     std::string payload(buf.begin(), buf.end());
     send(clientSock, 0, payload);
-}
-
-// The TCP checksum is computed based on a "pesudo-header" that
-// combines the (virtual) IP source and destination address, protocol value,
-// as well as the TCP header and payload
-
-// For more details, see the "Checksum" component of RFC793 Section 3.1,
-// https://www.ietf.org/rfc/rfc793.txt (pages 14-15)
-uint16_t TCPNode::computeTCPChecksum(
-    uint32_t virtual_ip_src, 
-    uint32_t virtual_ip_dst,
-    std::shared_ptr<struct tcphdr> tcp_header, 
-    std::string& payload) {
-
-    struct pseudo_header {
-        uint32_t ip_src;
-        uint32_t ip_dst;
-        uint8_t zero;
-        uint8_t protocol;
-        uint16_t tcp_length;
-    };
-
-    struct pseudo_header ph;
-
-    size_t ph_len = sizeof(struct pseudo_header);
-    size_t hdr_len = sizeof(struct tcphdr);
-    assert(ph_len == 12);
-    assert(hdr_len == 20);
-
-    // Now fill in the pesudo header
-    memset(&ph, 0, sizeof(struct pseudo_header));
-    ph.ip_src = virtual_ip_src;
-    ph.ip_dst = virtual_ip_dst;
-    ph.zero = 0;
-    ph.protocol = 6;  // TCP's assigned IP protocol number is 6
-
-    // From RFC: "The TCP Length is the TCP header length plus the
-    // data length in octets (this is not an explicitly transmitted
-    // quantity, but is computed), and it does not count the 12 octets
-    // of the pseudo header."
-    ph.tcp_length = htons(hdr_len + payload.size());
-
-    size_t total_len = ph_len + hdr_len + payload.size();
-    char buffer[total_len];
-    memset(buffer, 0, total_len);
-    memcpy(buffer, &ph, ph_len);
-    memcpy(buffer + ph_len, tcp_header.get(), hdr_len);
-    memcpy(buffer + ph_len + hdr_len, &payload[0], payload.size());
-
-    uint16_t checksum = ipNode->ip_sum(buffer, total_len);
-    return checksum;
 }
 
 // ISN = M + F(localip, localport, remoteip, remoteport, secretkey) where
@@ -709,6 +510,29 @@ struct siphash_key TCPNode::generateSecretKey() {
         key.key[1] = dis(rd_gen);
     });
     return key;
+}
+
+// Returns a port number > 0 or -1 if a port cannot be allocated
+int TCPNode::allocatePort() {
+    // Randomly select a port to use as srcPort
+    // NOTE: Inefficient when large number of ports are being used
+    int count = MAX_PORT - MIN_PORT + 1;
+    while (count > 0) {
+        if (!client_port_table.count(nextEphemeral) && !listen_port_table.count(nextEphemeral)) {
+            break;
+        }
+
+        if (nextEphemeral == MAX_PORT) {
+            nextEphemeral = MIN_PORT;
+        } else {
+            nextEphemeral++;
+        }
+        count--;
+    }
+
+    if (count == 0) {
+        return -1;
+    }
 }
 
 void TCPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload) {
