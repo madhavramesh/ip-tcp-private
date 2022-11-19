@@ -102,7 +102,7 @@ void TCPCommands::sockets(std::string& args) {
 }
 
 void TCPCommands::accept_loop(int sockClient, int sockListener, std::string address) {
-    while ((sockClient = tcpNode->accept(sockListener, address)) > 0) {
+    while ((sockClient = tcpNode->accept(sockListener, address)) >= 0) {
         std::cout << "accept on socket " << sockListener << " returned " << sockClient << std::endl;
     }
 }

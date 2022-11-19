@@ -10,33 +10,29 @@
 #include <mutex>
 #include <iostream>
 
-#include <include/TCP/socket.h>
+#include <include/TCP/TCPTuple.h>
+#include <include/TCP/TCPSocket.h>
 #include <include/IP/IPNode.h>
 
 class IPNode;
 
-const int MIN_PORT = 1024;
-const int MAX_PORT = 65535;
+const uint16_t MIN_PORT = 1024;
+const uint16_t MAX_PORT = 65535;
 
-const int SEND_WINDOW_SIZE = INT_MAX;
-const int RECV_WINDOW_SIZE = 65535;
-
-const int MAX_RETRANSMITS = 5;
-
-const int TCP_PROTOCOL_NUMBER = 6;
+const std::string NULL_IPADDR = "0.0.0.0";
 
 class TCPNode {
     public:
         std::shared_ptr<IPNode> ipNode;
         
         // Initializes new IPNode
-        TCPNode(unsigned int port);
+        TCPNode(uint16_t port);
 
         // creates a new socket and connects to an address (active OPEN in the RFC)
         // returns the socket number on success or a negative number on failure
         // You may choose to implement a blocking connect or non-blocking connect
         // Some possible failures: EAGAIN, ECONNREFUSED, ENETUNREACH, ETIMEDOUT
-        int connect(std::string& address, unsigned int port);
+        int connect(std::string& address, uint16_t port);
 
         // creates a new socket, binds the socket to an address/port
         // If addr is nil/0, bind to any available interface
@@ -45,7 +41,7 @@ class TCPNode {
         // Some possible failures: ENOMEM, EADDRINUSE, EADDRNOTAVAIL
         // (Note that a listening socket is used for "accepting new
         // connections")
-        int listen(std::string& address, unsigned int port);
+        int listen(std::string& address, uint16_t port);
 
         // accept a requested connection from the listening socket's connection queue
         // returns new socket handle on success or error on failure.
@@ -54,6 +50,13 @@ class TCPNode {
         // Some possible failures: EBADF, EINVAL, ENOMEM
         int accept(int socket, std::string& address);
 
+        // write on an open socket (SEND in the RFC)
+        // return num bytes written or negative number on failure
+        // nbyte = 0 should return 0 as well
+        // write is REQUIRED to block until all bytes are in the send buffer
+        // Some possible failures : EBADF, EINVAL, EPIPE
+        int write(int socket, std::vector<char>& buf);
+
         // read on an open socket (RECEIVE in the RFC)
         // return num bytes read or negative number on failure or 0 on eof and shutdown_read
         // nbyte = 0 should return 0 as well
@@ -61,13 +64,6 @@ class TCPNode {
         // All reads should return at least one data byte unless failure or eof occurs
         // Some possible failures : EBADF, EINVAL
         int read(int socket, std::vector<char>& buf);
-
-        // write on an open socket (SEND in the RFC)
-        // return num bytes written or negative number on failure
-        // nbyte = 0 should return 0 as well
-        // write is REQUIRED to block until all bytes are in the send buffer
-        // Some possible failures : EBADF, EINVAL, EPIPE
-        int write(int socket, std::vector<char>& buf);
 
         // shutdown an connection. If type is 1, close the writing part of
         // the socket (CLOSE call in the RFC. This should send a FIN, etc.)
@@ -88,8 +84,7 @@ class TCPNode {
         void close(int socket);
 
         // Helper function
-        std::vector<std::tuple<int, ClientSocket>> getClientSockets();
-        std::vector<std::tuple<int, ListenSocket>> getListenSockets();
+        std::vector<std::tuple<int, TCPSocket>> getClientSockets();
 
         void retransmitPackets();
 
@@ -97,22 +92,54 @@ class TCPNode {
         int nextSockId;
         int nextEphemeral;
 
-        std::mutex accept_mutex;
-        std::condition_variable accept_cond; // for accept waiting for completed conns
+        // socket descriptor -> Socket
+        std::unordered_map<int, std::shared_ptr<TCPSocket>> sd_table;
+        // (srcAddr, srcPort, destAddr, destPort) -> socket descriptor
+        std::unordered_map<TCPTuple, int> socket_tuple_table;
+        std::mutex sd_table_mutex;
+        
+        // Gets the TCP socket corresponding to a tuple (srcAddr, srcPort, destAddr, destPort)
+        std::shared_ptr<TCPSocket> getSocket(const TCPTuple& socketTuple);
 
-        // socket descriptor -> Client Socket
-        std::unordered_map<int, struct ClientSocket> client_sd_table;
-        // socket descriptor -> Listen Socket
-        std::unordered_map<int, struct ListenSocket> listen_sd_table;
+        // Allocates a random ephemeral port
+        uint16_t allocatePort();
 
-        // dest port -> list of Listen Socket Descriptor
-        std::unordered_map<unsigned int, std::list<int>> listen_port_table;
-        // dest port -> list of Client Socket Descriptors
-        std::unordered_map<unsigned int, std::list<int>> client_port_table;
 
-        void send(ClientSocket& clientSock, unsigned char sendFlags);
 
-        typedef std::tuple<std::string, unsigned int, std::string, unsigned int> AddrAndPort;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        void send(ClientSocket& clientSock, unsigned char sendFlags, std::string payload);
+
+        using AddrAndPort = std::tuple<std::string, unsigned int, std::string, unsigned int>;
         AddrAndPort extractAddrPort(
             std::shared_ptr<struct ip> ipHeader,
             std::shared_ptr<struct tcphdr> tcpHeader
@@ -129,74 +156,6 @@ class TCPNode {
             std::shared_ptr<struct tcphdr> tcpHeader, 
             std::string payload,
             int socketId);
-
-        void receiveSYN(
-            std::shared_ptr<struct ip> ipHeader, 
-            std::shared_ptr<struct tcphdr> tcpHeader
-        );
-
-        void receiveSYNACK(
-            std::shared_ptr<struct ip> ipHeader, 
-            std::shared_ptr<struct tcphdr> tcpHeader
-        );
-
-        void receiveACK(
-            std::shared_ptr<struct ip> ipHeader, 
-            std::shared_ptr<struct tcphdr> tcpHeader
-        );
-
-        template <typename Iter>
-        typename Iter::iterator getClientSocket(
-            std::string& srcAddr,
-            unsigned int srcPort,
-            std::string& destAddr,
-            unsigned int destPort,
-            Iter& iterable) {
-            static_assert(std::is_same<typename Iter::value_type, int>::value, 
-                          "Iterable must contain ints");
-
-            typename Iter::iterator it;
-            for (it = iterable.begin(); it != iterable.end(); it++) {
-                int socketDescriptor = *it;
-                if (!client_sd_table.count(socketDescriptor)) {
-                    continue;
-                }
-
-                // Check that (srcAddr, srcPort, destAddr, destPort) match
-                ClientSocket& clientSock = client_sd_table[socketDescriptor];
-                if (clientSock.srcAddr == destAddr && clientSock.srcPort == destPort && 
-                        clientSock.destAddr == srcAddr && clientSock.destPort == srcPort) {
-                    break;
-                }
-            }
-            return it;
-        };
-
-        template <typename Iter>
-        typename Iter::iterator getListenSocket(unsigned int destPort, Iter& iterable) {
-            static_assert(std::is_same<typename Iter::value_type, int>::value, 
-                          "Iterable must contain ints");
-
-            typename Iter::iterator it;
-            for (it = iterable.begin(); it != iterable.end(); it++) {
-                int socketDescriptor = *it;
-                if (!listen_sd_table.count(socketDescriptor)) {
-                    continue;
-                }
-
-                if (listen_sd_table[socketDescriptor].srcPort == destPort) {
-                    break;
-                }
-            }
-            return it;
-        };
-
-        uint16_t computeTCPChecksum(
-            uint32_t virtual_ip_src, 
-            uint32_t virtual_ip_dst,
-            std::shared_ptr<struct tcphdr> tcp_header,
-            std::string& payload
-        );
 
         unsigned int generateISN(
             std::string& srcAddr,
