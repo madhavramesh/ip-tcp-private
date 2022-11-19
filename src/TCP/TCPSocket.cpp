@@ -24,8 +24,16 @@ TCPTuple TCPSocket::toTuple() {
     // return state == SocketState::LISTEN;
 // }
 
-TCPSocket::SocketState TCPSocket::state() {
+TCPSocket::SocketState TCPSocket::getState() {
     return state;
+}
+
+void TCPSocket::setSeqNum(uint32_t seqNum) {
+    sendNxt = seqNum;
+}
+
+void TCPSocket::setAckNum(uint32_t ackNum) {
+    unAck = ackNum;
 }
 
 void TCPSocket::socket_listen() {

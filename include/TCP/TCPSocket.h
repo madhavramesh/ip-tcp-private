@@ -81,6 +81,9 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
 
         void retransmitPackets();
 
+        void setAckNum();
+        void setSeqNum();
+
     private:
         bool activeOpen { false };
         SocketState state { SocketState::CLOSED };
@@ -94,6 +97,10 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         uint32_t irs { 0 };
 
         int maxRetransmits { MAX_RETRANSMITS };
+        // TODO: Potentially include both R1 and R2 timeouts
+        // TODO: Dynamically calculate RTO
+
+        // TODO: Implement zero-window probing and Silly Window Syndrome
 
         uint32_t unAck { 0 };
         uint32_t sendNext { 0 };

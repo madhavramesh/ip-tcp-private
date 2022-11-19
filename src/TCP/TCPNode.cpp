@@ -225,26 +225,30 @@ void TCPNode::shutdown(int socket, int type) {
     auto sockIt = sd_table.find(socket);
     if (sockIt == sd_table.end()) {
         std::cerr << red << "error: connection does not exist" << color_reset << std::endl;
-        return -1;
+        // return -1;
+        return;
     }
     std::shared_ptr<TCPSocket> sock = sockIt->second;
 
     switch (type) {
         case 1: // Close writing part, send FIN
-
-            
-
+            return;
 
         case 2; // Close reading part
-
+            return;
 
         case 3; // Close both
+            return;
+
+        default:
+            return;
+        
     }
 }
 
 
 void TCPNode::close(int socket) {
-
+    return;
 }
 
 
@@ -256,72 +260,77 @@ void TCPNode::retransmitPackets() {
     }
 }
 
-TCPNode::AddrAndPort TCPNode::extractAddrPort(std::shared_ptr<struct ip> ipHeader, 
+TCPTuple TCPNode::extractTCPTuple(std::shared_ptr<struct ip> ipHeader, 
         std::shared_ptr<struct tcphdr> tcpHeader) {
 
-    std::string srcAddr = ip::make_address_v4(ipHeader->ip_src.s_addr).to_string();
-    unsigned int srcPort = tcpHeader->th_sport;
-    std::string destAddr = ip::make_address_v4(ipHeader->ip_dst.s_addr).to_string();
-    int destPort = tcpHeader->th_dport;
+    std::string remoteAddr = ip::make_address_v4(ipHeader->ip_src.s_addr).to_string();
+    unsigned int remotePort = tcpHeader->th_sport;
+    std::string localAddr = ip::make_address_v4(ipHeader->ip_dst.s_addr).to_string();
+    int localPort = tcpHeader->th_dport;
 
-    return std::make_tuple(srcAddr, srcPort, destAddr, destPort);
+    return TCPTuple(localAddr, localPort, remoteAddr, remotePort);
 }
-
 // #todo, handle removing from incomplete to complete 
 void TCPNode::handleClient(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader, 
     std::string payload) {
 
-        auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
+        TCPTuple socketTuple = extractTCPTuple(ipHeader, tcpHeader);
+        std::shared_ptr<TCPSocket> tempSock = std::make_shared<TCPSocket>(socketTuple);
 
-        ClientSocket tempSock;
-        tempSock.id = -1;
-        tempSock.activeOpen = false;
-        tempSock.state = SocketState::CLOSED;
-        tempSock.srcAddr = destAddr;
-        tempSock.srcPort = destPort;
-        tempSock.destAddr = srcAddr;
-        tempSock.destPort = srcPort;
-
-        // =============================================================================================================
+        // ===================================================================================
         // CLOSED
-        // =============================================================================================================
+        // ===================================================================================
 
-        if (!(listen_port_table.count(destPort) || client_port_table.count(destPort))) { // is closed
-
-            if (!(tcpHeader->th_flags & TH_RST) && (tcpHeader->th_flags & TH_ACK)) {
-                // Send RST
-                send(tempSock, TH_RST, tcpHeader->th_ack, 0, "");
-            } else {
-                // Send RST
-                send(tempSock, TH_RST, tcpHeader->th_seq + payload.size(), 0, "");
-            }
+        if (!socket_tuple_table.count(socketTuple)) { // is closed
+            if (!(tcpHeader->th_flags & TH_RST)) {
+                if (tcpHeader->th_flags & TH_ACK) {
+                    // Send RST
+                    tempSock->setSeqNum(tcpHeader->th_ack);
+                    tempSock->setAckNum(0);
+                    tempSock->sendTCPPacket(TH_RST, "");
+                } else {
+                    // Send RST
+                    tempSock->setSeqNum(0);
+                    tempSock->setAckNum(tcpHeader->th_seq + payload.size());
+                    tempSock->sendTCPPacket(TH_RST, "");
+                }
+            } 
             return;
         }
         
-        // =============================================================================================================
+        // ===================================================================================
         // LISTEN
-        // =============================================================================================================
+        // ===================================================================================
 
-        auto listenSocketsIt = listen_port_table.find(destPort);
-           // Check if listen socket exists
-        if (listenSocketsIt != listen_port_table.end()) {
+       // Check if listen socket exists
+        std::shared_ptr<TCPSocket> sock = getSocket(TCPTuple);
+        if (sock && sock->getState() == TCPSocket::SocketState::LISTEN) {
 
+            // Check for RST
             if (tcpHeader->th_flags & TH_RST) {
                 return;
             }
 
+            // Check for ACK
             if (tcpHeader->th_flags & TH_ACK) {
-                send(tempSocket, TH_RST, tcpHeader->th_ack, 0, "");
+                tempSock->setSeqNum(tcpHeader->th_ack);
+                tempSock->setAckNum(0);
+                tempSock->sendTCPPacket(TH_RST, "");
                 return;
             }
 
+            // Check for SYN
             if (tcpHeader->th_flags & TH_SYN) {
-                // Retrieve the listener socket
-                auto listenSocketIt = getListenSocket(destPort, listenSocketsIt->second);
-                if (listenSocketIt != listenSocketsIt->second.end()) {
-                    ListenSocket& listenSock = listen_sd_table[*listenSocketIt];
+                std::shared_ptr<TCPSocket> newSock = std::make_shared<TCPSocket>(
+                        socketTuple.getSrcAddr(), socketTuple.getSrcPort(), 
+                        socketTuple.getDestAddr(), socketTuple.getDestPort());
+
+                // Add to socket descriptor table
+                int socketId = nextSockId++;
+                sd_table.insert(std::make_pair(socketId, sock));
+                socket_tuple_table.insert(std::make_pair(sock.toTuple(), socketId));
 
                     // Set up new client socket
                     ClientSocket clientSock;
@@ -812,56 +821,19 @@ void TCPNode::receive(
     std::shared_ptr<struct tcphdr> tcpHeader,
     std::string& payload) {
         
-        // Convert back to host byte order
-        ipHeader->ip_src.s_addr = ntohl(ipHeader->ip_src.s_addr);
-        ipHeader->ip_dst.s_addr = ntohl(ipHeader->ip_dst.s_addr);
-        ipHeader->ip_len = ntohs(ipHeader->ip_len);
+    // Convert back to host byte order
+    ipHeader->ip_src.s_addr = ntohl(ipHeader->ip_src.s_addr);
+    ipHeader->ip_dst.s_addr = ntohl(ipHeader->ip_dst.s_addr);
+    ipHeader->ip_len = ntohs(ipHeader->ip_len);
 
-        tcpHeader->th_sport = ntohs(tcpHeader->th_sport);
-        tcpHeader->th_dport = ntohs(tcpHeader->th_dport);
-        tcpHeader->th_seq = ntohl(tcpHeader->th_seq);
-        tcpHeader->th_ack = ntohl(tcpHeader->th_ack);
-        tcpHeader->th_win = ntohs(tcpHeader->th_win);
+    tcpHeader->th_sport = ntohs(tcpHeader->th_sport);
+    tcpHeader->th_dport = ntohs(tcpHeader->th_dport);
+    tcpHeader->th_seq = ntohl(tcpHeader->th_seq);
+    tcpHeader->th_ack = ntohl(tcpHeader->th_ack);
+    tcpHeader->th_win = ntohs(tcpHeader->th_win);
 
-        // Find socket
-        auto [srcAddr, srcPort, destAddr, destPort] = extractAddrPort(ipHeader, tcpHeader);
-        
-        bool inClientTable = true;
-        // Check if in client socket table
-        if (!client_port_table.count(destPort)) {
-            inClientTable = false;
-        }
-        auto clientSocketIt = getClientSocket(srcAddr, srcPort, destAddr, destPort, 
-                                            client_port_table[destPort]);
-        if (clientSocketIt == client_port_table[destPort].end()) {
-            inClientTable = false;
-        }
-
-        if (inClientTable) {
-            // Handle client
-        }
-
-        if (foundInClientTable()) {
-            handleClient()
-        } else if (foundInListenerTable()) {
-            handleListenerCase()
-        } else {
-            // Handle CLOSED state
-            // printError
-        }
-        
-    
-
-    if ((tcpHeader->th_flags & TH_SYN) && (tcpHeader->th_flags & TH_ACK)) {
-        // SYN + ACK received
-        receiveSYNACK(ipHeader, tcpHeader);
-    } else if (tcpHeader->th_flags & TH_SYN) {
-        // SYN received
-        receiveSYN(ipHeader, tcpHeader);
-    } else if (tcpHeader->th_flags & TH_ACK) {
-        // ACK received
-        receiveACK(ipHeader, tcpHeader);
-    }
+    // Find socket 
+    handleClient(ipHeader, tcpHeader, payload);
 }
 
 
