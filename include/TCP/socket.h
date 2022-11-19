@@ -47,7 +47,7 @@ struct ClientSocket {
     unsigned int sendWnd;
     unsigned int sendWl1;
     unsigned int sendWl2;
-    unsigned int iss;
+    unsigned int iss; 
 
     unsigned int irs;
 
