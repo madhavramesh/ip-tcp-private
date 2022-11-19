@@ -106,6 +106,7 @@ class TCPSocket {
         void setSendWl2(uint32_t newSendWl2);
         void setAckNum(uint32_t newAckNum);
         void setSeqNum(uint32_t newSeqNum);
+        void setIrs(uint32_t newIrs);
         
         uint32_t getUnack();
         uint32_t getSeqNum();
@@ -116,6 +117,9 @@ class TCPSocket {
         uint16_t getSendWnd();
         uint32_t getSendWl1();
         uint32_t getSendWl2();
+
+
+        void setRecvBufNext(uint32_t newRecvBufNext);
 
 //
         // void initializeISS();

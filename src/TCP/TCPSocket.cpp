@@ -47,6 +47,10 @@ void TCPSocket::setUnack(uint32_t newUnack) {
     unack = newUnack;
 }
 
+void TCPSocket::setIrs(uint32_t newIrs) {
+    irs = newIrs;
+}
+
 uint32_t TCPSocket::getUnack() {
     return unack;
 }
@@ -80,6 +84,10 @@ uint32_t TCPSocket::getSendWl1() {
 
 uint32_t TCPSocket::getSendWl2() {
     return sendWl2;
+}
+
+void TCPSocket::setRecvBufNext(uint32_t newRecvBufNext) {
+    recvBuffer->setNext(newRecvBufNext);
 }
 
 
