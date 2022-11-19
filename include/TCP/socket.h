@@ -3,9 +3,13 @@
 #include <unordered_map>
 #include <deque>
 #include <string>
-#include <boost/circular_buffer.hpp>
+#include <list>
+
+#include <netinet/tcp.h>
 
 #include "include/TCP/CircularBuffer.h"
+
+#include <boost/circular_buffer.hpp>
 
 enum SocketState {
     LISTEN,
@@ -35,6 +39,14 @@ static std::unordered_map<SocketState, std::string> SocketStateString = {
     {CLOSED, "CLOSED"},
 };
 
+struct RetransmitPacket {
+    std::shared_ptr<struct tcphdr> tcpHeader;
+    std::string payload;
+    std::chrono::time_point<std::chrono::steady_clock> retransmitTime;
+    std::chrono::seconds retransmitInterval;
+    int numRetransmits;
+};
+
 struct ClientSocket {
     int id;
     bool activeOpen;
@@ -47,12 +59,16 @@ struct ClientSocket {
     unsigned int sendWnd;
     unsigned int sendWl1;
     unsigned int sendWl2;
-    unsigned int iss; 
 
+    unsigned int iss;
     unsigned int irs;
 
-    unsigned int sendWnd;
-    TCPCircularBuffer sendBuffer;
+    int maxRetransmits;
+
+    unsigned int unAck;
+    unsigned int sendNext;
+
+    std::list<struct RetransmitPacket> retransmissionQueue;
     TCPCircularBuffer recvBuffer;
 };
 
