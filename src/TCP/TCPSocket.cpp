@@ -16,9 +16,13 @@ TCPTuple TCPSocket::toTuple() {
     return socketTuple;
 }
 
-// void TCPSocket::setState(SocketState newState) {
-    // state = newState;
-// }
+SocketState TCPSocket::getState() {
+    return socketState;
+}
+
+void TCPSocket::setState(SocketState newState) {
+    state = newState;
+}
 //
 // bool TCPSocket::isListen() {
     // return state == SocketState::LISTEN;

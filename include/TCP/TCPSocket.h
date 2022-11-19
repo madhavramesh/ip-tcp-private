@@ -66,6 +66,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
 
         TCPTuple toTuple();
         SocketState getState();
+        void setState(SocketState newState);
 
         void socket_listen();
         std::shared_ptr<TCPSocket> socket_accept();
