@@ -59,6 +59,10 @@ void TCPSocket::setRecvWindow(uint32_t newRecvWindow) {
     recvBuffer.rec = newRecvWindow;
 }
 
+void TCPSocket::resetTimedWaitTime() {
+    timedWaitTime = std::chrono::steady_clock::now();
+}
+
 uint32_t TCPSocket::getUnack() {
     return unack;
 }
@@ -100,6 +104,10 @@ uint32_t TCPSocket::getSendWl2() {
 
 bool TCPSocket::isActiveOpen() {
     return activeOpen;
+}
+
+std::chrono::time_point<std::chrono::steady_clock> TCPSocket::getTimedWaitTime() {
+    return timedWaitTime;
 }
 
 void TCPSocket::initializeRecvBuffer(uint32_t seqNum) {
@@ -211,7 +219,18 @@ void TCPSocket::addIncompleteConnection(std::shared_ptr<TCPSocket> newSock) {
     newSock->recvBuffer.initializeWith(tcpHeader->th_seq);
 
     // Add socket to corresponding listening socket's incomplete connections
-    incompleteConns.push_back(newSock);
+    incompleteConns[newSock->toTuple()] = newSock;
+}
+
+void TCPSocket::moveToCompleteConnection(std::shared_ptr<TCPSocket> sock) {
+    TCPTuple& socketTuple = sock->toTuple();
+    if (!incompleteConns.count(socketTuple)) {
+        return;
+    }
+
+    completeConns.push_back(incompleteConns[socketTuple]);
+    incompleteConns.erase(socketTuple);
+    acceptCond.notify_one();
 }
 
 /**

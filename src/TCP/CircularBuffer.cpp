@@ -1,6 +1,6 @@
 #include <include/TCP/CircularBuffer.h>
 
-TCPCircularBuffer::TCPCircularBuffer(int size) : data(size), start(1), next(1), last(0) {} // #todo double check initial vals and places where you use it
+TCPCircularBuffer::TCPCircularBuffer(int size) : data(size), start(1), next(1), last(0) {}
 
 uint32_t TCPCircularBuffer::getStart() {
     return start;
@@ -32,16 +32,7 @@ void TCPCircularBuffer::initializeWith(int n) {
     last = n;
 }
 
-int write(int numBytes, std::string& buf) {
-    int pos = 0;
-    while (last != start && pos < numBytes) {
-        last++;
-        data[last % data.capacity()] = buf[pos];
-        pos++;
-    }
-    return pos;
-}
-
+// Read only from start
 int read(int numBytes, std::string& buf) {
     int insertPos = 0;
     while (start != next && insertPos < numBytes) {
@@ -52,13 +43,15 @@ int read(int numBytes, std::string& buf) {
     return insertPos;
 }
 
-int put(int numBytes, std::string& buf) {
-    int pos = 0;
-    while (last - start < data.capacity()) {
-        data[next % data.capacity()] = buf[pos];
+// Write to any position (allows us to receive packets out of order)
+int write(int numBytes, std::string& buf, int pos) {
+    int numWritten = 0;
+    while (pos < data.capacity() && pos < buf.size()) {
+        data[pos % data.capacity()] = buf[numWritten];
         pos++;
+        numWritten++;
     }
-    return pos;
+    return numWritten;
 }
 
 int getNumBytes(int numBytes, std::string& buf) {

@@ -27,12 +27,13 @@ const uint16_t RECV_WINDOW_SIZE = 65535;
 
 const int DEFAULT_RTO = 1;              // In seconds
 const int MAX_RETRANSMITS = 5;          // Avoids the calculation of R1 and R2
+const int TIME_WAIT_LEN = 120000        // In milliseconds
 
 const int TCP_PROTOCOL_NUMBER = 6;
 
 const std::string NULL_IPADDR = "0.0.0.0";
 
-class TCPSocket {
+class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
     public:
 
         struct TCPPacket {
@@ -96,6 +97,8 @@ class TCPSocket {
         void setSeqNum(uint32_t newSeqNum);
         void setIrs(uint32_t newIrs);
         void setRecvBufNext(uint32_t newRecvBufNext);
+
+        void resetTimedWaitTime();
         
         SocketState getState();
         uint32_t getUnack();
@@ -108,6 +111,7 @@ class TCPSocket {
         uint32_t getSendWl1();
         uint32_t getSendWl2();
         bool isActiveOpen();
+        std::chrono::time_point<std::chrono::steady_clock> getTimedWaitTime();
 
         void initializeRecvBuffer(uint32_t seqNum);
         bool retransmissionQueueEmpty();
@@ -117,6 +121,7 @@ class TCPSocket {
         void socket_connect();
 
         void addIncompleteConnection(std::shared_ptr<TCPSocket> newSock);
+        void moveToCompleteConnection(std::shared_ptr<TCPSocket> newSock);
 
         int readRecvBuf(int numBytes, std::string& buf);
         int putRecvBuf(int numBytes, std::string& payload);
@@ -132,6 +137,7 @@ class TCPSocket {
         uint32_t ackNum, std::string payload);
 
         void retransmitPackets();
+        void flushRetransmission();
 
         static uint16_t computeTCPChecksum(
             uint32_t virtual_ip_src,
@@ -173,17 +179,18 @@ class TCPSocket {
         std::deque<std::unique_ptr<TCPPacket>> retransmissionQueue;
         TCPCircularBuffer recvBuffer;
 
-        // NOTE: Only used by listen sockets
+        // NOTE: Condition variables used ONLY by listen sockets
         std::mutex acceptMutex;
         std::condition_variable acceptCond;
 
-        // NOTE: Only used by listen sockets
+        // NOTE: ONLY used by listen sockets
         // ESTABLISHED state
         std::deque<std::shared_ptr<TCPSocket>> completeConns;                   
         // SYN-RECEIVED state
         std::unordered_map<TCPTuple, std::shared_ptr<TCPSocket>> incompleteConns;  
 
-        void flushRetransmission();
+        // Timer used after entering timed wait state
+        std::chrono::time_point<std::chrono::steady_clock> timedWaitTime;
 
         unsigned int generateISN(
             std::string& srcAddr,

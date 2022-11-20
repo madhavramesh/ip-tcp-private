@@ -9,9 +9,9 @@ class TCPCircularBuffer {
         // Size MUST be greater than 1
         TCPCircularBuffer(int size);
 
-        unsigned int getStart();
-        unsigned int getNext();
-        unsigned int getLast();
+        uint32_t getStart();
+        uint32_t getNext();
+        uint32_t getLast();
 
         void setStart(int n);
         void setNext(int n);
@@ -29,9 +29,9 @@ class TCPCircularBuffer {
 
     private:
         boost::circular_buffer<char> data;
-        unsigned int start;  // Unacknowledged (send buffer) or next read (recv buffer)
-        unsigned int next;   // Next send (send buffer) or next expected (recv buffer)
-        unsigned int last;   // Last written (send buffer) or last received (recv buffer)
+        uint32_t start;  // Unacknowledged (send buffer) or next read (recv buffer)
+        uint32_t next;   // Next send (send buffer) or next expected (recv buffer)
+        uint32_t last;   // Last written (send buffer) or last received (recv buffer)
 
         /* 
         Sending

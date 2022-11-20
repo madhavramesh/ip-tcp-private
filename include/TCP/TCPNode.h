@@ -83,16 +83,11 @@ class TCPNode {
         // Some possible failures : EBADF
         void close(int socket);
 
-        // Helper function
-        std::vector<std::tuple<int, TCPSocket>> getClientSockets();
+        // Returns all sockets in socket descriptor table
+        std::unordered_map<int, TCPSocket>> getSockets();
 
+        // Used to start a separate thread to retransmit packets
         void retransmitPackets();
-
-        void handleClient(
-            std::shared_ptr<struct ip> ipHeader, 
-            std::shared_ptr<struct tcphdr> tcpHeader, 
-            std::string payload
-        );
 
     private:
         int nextSockId;
@@ -127,33 +122,68 @@ class TCPNode {
         void handleClient(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader, 
-            std::string& payload,
-            int socketId
+            std::string& payload
         );
 
         void transitionFromClosed(
-            std::shared_ptr<TCPSocket> sock, 
             std::shared_ptr<struct tcphdr> tcpHeader,
             std::string& payload
+            TCPTuple& socketTuple,
         );
 
         void transitionFromListen(
-            std::shared_ptr<TCPSocket> sock, 
-            std::shared_ptr<TCPSocket> tempSock, 
             std::shared_ptr<struct tcphdr> tcpHeader,
-            TCPTuple& socketTuple
+            std::string& payload,
+            std::shared_ptr<TCPSocket> listenSock, 
+            TCPTuple& socketTuple, 
         );
 
         void transitionFromSynSent(
-            std::shared_ptr<TCPSocket> sock, 
-            std::shared_ptr<struct ip> ipHeader,
             std::shared_ptr<struct tcphdr> tcpHeader,
-            std::string& payload
+            std::shared_ptr<struct ip> ipHeader,
+            std::string& payload,
+            std::shared_ptr<TCPSocket> sock, 
         );
 
-        bool segmentIsAcceptable(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeader);
+        bool segmentIsAcceptable(
+            std::shared_ptr<struct tcphdr> tcpHeader,
+            std::string& payload,
+            std::shared_ptr<TCPSocket> sock 
+        );
 
         void trimPayload(std::shared_ptr<struct tcphdr> tcpHeder, std::string& payload);
+
+        void transitionFromOtherRSTBit(
+            std::shared_ptr<struct tcphdr> tcpHeader, 
+            std::string& payload, 
+            std::shared_ptr<TCPSocket> sock
+        );
+
+        void transitionFromOtherSYNBit(
+            std::shared_ptr<struct tcphdr> tcpHeader, 
+            std::string& payload, 
+            std::shared_ptr<TCPSocket> sock
+        );
+
+        void transitionFromOtherACKBit(
+            std::shared_ptr<struct tcphdr> tcpHeader, 
+            std::string& payload, 
+            std::shared_ptr<TCPSocket> sock
+        );
+
+        void processSegmentText(
+            std::shared_ptr<struct tcphdr> tcpHeader, 
+            std::string& payload, 
+            std::shared_ptr<TCPSocket> sock
+        );
+
+        void transitionFromOtherFINBit(
+            std::shared_ptr<struct tcphdr> tcpHeader, 
+            std::string& payload, 
+            std::shared_ptr<TCPSocket> sock
+        );
+
+        void removeTimedWaitSockets();
 
         // Allocates a random ephemeral port
         uint16_t allocatePort(std::string& srcAddr, std::string& destAddr, uint16_t destPort);
