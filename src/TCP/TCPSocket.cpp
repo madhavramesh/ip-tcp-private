@@ -55,6 +55,10 @@ void TCPSocket::setIrs(uint32_t newIrs) {
     irs = newIrs;
 }
 
+void TCPSocket::setRecvWindow(uint32_t newRecvWindow) {
+    recvBuffer.rec = newRecvWindow;
+}
+
 uint32_t TCPSocket::getUnack() {
     return unack;
 }
@@ -94,14 +98,17 @@ uint32_t TCPSocket::getSendWl2() {
     return sendWl2;
 }
 
-bool TCPSocket::getActiveOpen() {
-    return active_open;
+bool TCPSocket::isActiveOpen() {
+    return activeOpen;
 }
 
 void TCPSocket::initializeRecvBuffer(uint32_t seqNum) {
     recvBuffer.initializeWith(seqNum);
 }
 
+bool TCPSocket::retransmissionQueueEmpty() {
+    return retransmissionQueue.empty();
+}
 
 void TCPSocket::socket_listen() {
     activeOpen = false;
@@ -214,12 +221,12 @@ void TCPSocket::addIncompleteConnection(std::shared_ptr<TCPSocket> newSock) {
  * @param length 
  * @return int 
  */
-int TCPSocket::read(int numBytes, std::string& buf) {
+int TCPSocket::readRecvBuf(int numBytes, std::string& buf) {
     return recvBuffer.read(numBytes, buf);
 }
 
-int TCPSocket::write(int numBytes, std::string& payload) {
-    return recvBuffer.write(numBytes, payload);
+int TCPSocket::putRecvBuf(int numBytes, std::string& payload) {
+    return recvBuffer.put(numBytes, payload);
 }
 
 void TCPSocket::sendTCPPacket(std::unique_ptr<struct TCPPacket> tcpPacket) {

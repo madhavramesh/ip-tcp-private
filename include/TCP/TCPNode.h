@@ -86,7 +86,6 @@ class TCPNode {
         // Helper function
         std::vector<std::tuple<int, TCPSocket>> getClientSockets();
 
-
         void retransmitPackets();
 
         void handleClient(
@@ -128,23 +127,28 @@ class TCPNode {
         void handleClient(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader, 
-            std::string payload,
+            std::string& payload,
             int socketId
         );
 
         void transitionFromClosed(
             std::shared_ptr<TCPSocket> sock, 
-            std::shared_ptr<struct tcphdr> tcpHeader
+            std::shared_ptr<struct tcphdr> tcpHeader,
+            std::string& payload
         );
 
         void transitionFromListen(
             std::shared_ptr<TCPSocket> sock, 
-            std::shared_ptr<struct tcphdr> tcpHeader
+            std::shared_ptr<TCPSocket> tempSock, 
+            std::shared_ptr<struct tcphdr> tcpHeader,
+            TCPTuple& socketTuple
         );
 
         void transitionFromSynSent(
             std::shared_ptr<TCPSocket> sock, 
-            std::shared_ptr<struct tcphdr> tcpHeader
+            std::shared_ptr<struct ip> ipHeader,
+            std::shared_ptr<struct tcphdr> tcpHeader,
+            std::string& payload
         );
 
         bool segmentIsAcceptable(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeader);

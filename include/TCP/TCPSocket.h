@@ -34,6 +34,12 @@ const std::string NULL_IPADDR = "0.0.0.0";
 
 class TCPSocket {
     public:
+
+        struct TCPPacket {
+            std::shared_ptr<struct tcphdr> tcpHeader;
+            std::string payload;
+        };
+        
         enum class SocketState {
             LISTEN,
             SYN_RECV,
@@ -101,7 +107,10 @@ class TCPSocket {
         uint16_t getSendWnd();
         uint32_t getSendWl1();
         uint32_t getSendWl2();
-        bool getActiveOpen();
+        bool isActiveOpen();
+
+        void initializeRecvBuffer(uint32_t seqNum);
+        bool retransmissionQueueEmpty();
 
         void socket_listen();
         std::shared_ptr<TCPSocket> socket_accept();
@@ -109,8 +118,8 @@ class TCPSocket {
 
         void addIncompleteConnection(std::shared_ptr<TCPSocket> newSock);
 
-        int read(int numBytes, std::string& buf);
-        int write(int numBytes, std::string& payload);
+        int readRecvBuf(int numBytes, std::string& buf);
+        int putRecvBuf(int numBytes, std::string& payload);
 
         void sendTCPPacket(std::unique_ptr<struct TCPPacket>& tcpPacket);
         void receiveTCPPacket(
@@ -146,10 +155,6 @@ class TCPSocket {
         uint32_t unAck { 0 };
         uint32_t sendNext { 0 };
 
-        struct TCPPacket {
-            std::shared_ptr<struct tcphdr> tcpHeader;
-            std::string payload;
-        };
         // TCP Packets that were received out of order
         std::deque<std::unique_ptr<TCPPacket>> outOfOrderQueue;
 
