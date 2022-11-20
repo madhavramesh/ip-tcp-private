@@ -12,6 +12,6 @@ constexpr unsigned int_hash(uint32_t key) {
     return key;
 }
 
-constexpr unsigned pair_int_hash(uint32_t key1, uint32_t key2) {
+constexpr unsigned pair_int_hash(uint32_t const key1, uint32_t const key2) {
     return int_hash((int_hash(key1) * 209) ^ (int_hash(key2 * 413)));
 }

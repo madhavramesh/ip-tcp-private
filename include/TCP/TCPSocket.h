@@ -20,14 +20,17 @@
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 
+#include <include/IP/IPNode.h>
 #include <include/TCP/TCPSocket.h>
 #include <include/TCP/CircularBuffer.h>
 
 const uint16_t RECV_WINDOW_SIZE = 65535;
 
-const int DEFAULT_RTO = 1;              // In seconds
-const int MAX_RETRANSMITS = 5;          // Avoids the calculation of R1 and R2
-const int TIME_WAIT_LEN = 120000        // In milliseconds
+// RFC states that lower bound for RTO should be 1 second
+// For this project, this is too long so we use 1 ms
+const int DEFAULT_RTO = 1;              // milliseconds
+const int MAX_RETRANSMITS = 5;          // doesn't account for calculation of R1 and R2
+const int TIME_WAIT_LEN = 120000        // milliseconds
 
 const int TCP_PROTOCOL_NUMBER = 6;
 
@@ -82,8 +85,14 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             }
         }
 
-        TCPSocket(std::string localAddr, uint16_t localPort, std::string destAddr, uint16_t destPort);
-        TCPSocket(const TCPTuple& otherTuple);
+        TCPSocket(
+            std::string localAddr, 
+            uint16_t localPort, 
+            std::string destAddr, 
+            uint16_t destPort, 
+            std::shared_ptr<IPNode> node
+        );
+        TCPSocket(const TCPTuple& otherTuple, std::shared_ptr<IPNode> node);
         ~TCPSocket();
 
         TCPTuple toTuple();
@@ -97,7 +106,6 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         void setSeqNum(uint32_t newSeqNum);
         void setIrs(uint32_t newIrs);
         void setRecvBufNext(uint32_t newRecvBufNext);
-
         void resetTimedWaitTime();
         
         SocketState getState();
@@ -124,7 +132,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         void moveToCompleteConnection(std::shared_ptr<TCPSocket> newSock);
 
         int readRecvBuf(int numBytes, std::string& buf);
-        int putRecvBuf(int numBytes, std::string& payload);
+        int writeRecvBuf(int numBytes, std::string& payload, uint32_t pos);
 
         void sendTCPPacket(std::unique_ptr<struct TCPPacket>& tcpPacket);
         void receiveTCPPacket(
@@ -147,6 +155,8 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         );
 
     private:
+        std::shared_ptr<IPNode> ipNode;
+
         bool activeOpen { false };
         SocketState state { SocketState::CLOSED };
         TCPTuple socketTuple;
@@ -194,9 +204,9 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
 
         unsigned int generateISN(
             std::string& srcAddr,
-            unsigned int srcPort,
+            uint16_t srcPort,
             std::string& destAddr,
-            unsigned int destPort
+            uint16_t destPort
         );
 
         struct siphash_key generateSecretKey();

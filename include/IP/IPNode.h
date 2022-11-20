@@ -68,7 +68,7 @@ class IPNode {
         void RIP();
 
         // IP checksum calculation
-        uint16_t ip_sum(void *buffer, int len);
+        static uint16_t ip_sum(void *buffer, int len);
 
         // Registers a handler for a new protocol (can be user provided)
         void registerHandler(int protocol, ProtocolHandler func);

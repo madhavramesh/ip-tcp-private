@@ -10,16 +10,20 @@
 #include <mutex>
 #include <iostream>
 
+#include <netinet/ip.h>
+#include <netinet/tcp.h>
+
 #include <include/TCP/TCPTuple.h>
 #include <include/TCP/TCPSocket.h>
 #include <include/IP/IPNode.h>
 
 class IPNode;
+class TCPSocket;
 
 const uint16_t MIN_PORT = 1024;
 const uint16_t MAX_PORT = 65535;
 
-const std::string NULL_IPADDR = "0.0.0.0";
+const int MAX_TRANSMIT_UNIT = 1500 - sizeof(struct ip) - sizeof(struct tcphdr);
 
 class TCPNode {
     public:
@@ -55,7 +59,7 @@ class TCPNode {
         // nbyte = 0 should return 0 as well
         // write is REQUIRED to block until all bytes are in the send buffer
         // Some possible failures : EBADF, EINVAL, EPIPE
-        int write(int socket, std::vector<char>& buf);
+        int write(int socket, std::string& buf);
 
         // read on an open socket (RECEIVE in the RFC)
         // return num bytes read or negative number on failure or 0 on eof and shutdown_read
@@ -63,7 +67,7 @@ class TCPNode {
         // read is REQUIRED to block when there is no available data
         // All reads should return at least one data byte unless failure or eof occurs
         // Some possible failures : EBADF, EINVAL
-        int read(int socket, std::string& buf);
+        int read(int socket, std::string& buf, bool blocking);
 
         // shutdown an connection. If type is 1, close the writing part of
         // the socket (CLOSE call in the RFC. This should send a FIN, etc.)
@@ -98,10 +102,13 @@ class TCPNode {
         // (srcAddr, srcPort, destAddr, destPort) -> socket descriptor
         std::unordered_map<TCPTuple, int> socket_tuple_table;
         std::mutex sd_table_mutex;
+
+        std::mutex readMutex;
+        std::condition_variable readCond;
         
         // Gets the TCP socket corresponding to a tuple (srcAddr, srcPort, destAddr, destPort)
         std::shared_ptr<TCPSocket> getSocket(const TCPTuple& socketTuple);
-        void deleteSocket(TCPTuple& socketTuple);
+        void deleteSocket(TCPTuple socketTuple);
 
         TCPTuple extractTCPTuple(
             std::shared_ptr<struct ip> ipHeader,
@@ -151,7 +158,7 @@ class TCPNode {
             std::shared_ptr<TCPSocket> sock 
         );
 
-        void trimPayload(std::shared_ptr<struct tcphdr> tcpHeder, std::string& payload);
+        void trimPayload(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeder, std::string& payload);
 
         void transitionFromOtherRSTBit(
             std::shared_ptr<struct tcphdr> tcpHeader, 

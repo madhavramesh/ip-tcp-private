@@ -48,66 +48,49 @@ TCPCommands::TCPCommands(std::shared_ptr<TCPNode> node) : tcpNode(node), IPComma
 // Prints out the socket information
 void TCPCommands::sockets(std::string& args) {
     // // Topmost column names
-    // std::vector<std::string> colNames = { "socket", "local-addr", "port", "dst-addr", "port", "status"};
+    std::vector<std::string> colNames = { "socket", "local-addr", "port", "dst-addr", "port", "status"};
 
     // // Print out top row
-    // std::ostringstream interfaceString;
-    // for (auto& colName : colNames) {
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << colName << " ";
-    // }
-    // interfaceString << std::endl;
+    std::ostringstream interfaceString;
+    for (auto& colName : colNames) {
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << colName << " ";
+    }
+    interfaceString << std::endl;
 
     // // Print out divider
-    // for (int i = 0; i < colNames.size(); i++) {
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "----------";
-    // }
-    // interfaceString << std::endl;
+    for (int i = 0; i < colNames.size(); i++) {
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << "----------";
+    }
+    interfaceString << std::endl;
 
-    // // For each socket, print out the socket information
-    // std::vector<std::tuple<int, TCPSocket>> clientSockets = tcpNode->getClientSockets();
-    // // #todo fix
-    // // std::vector<std::tuple<int, TCPSocket>> listenSockets = tcpNode->getListenSockets();
+    // For each socket, print out the socket information
+    auto sockets = tcpNode->getSockets();
 
-    // // for (auto listenSocket : listenSockets) {
-    // //     int socketID = std::get<0>(listenSocket);
-    // //     TCPSocket socket = std::get<1>(listenSocket);
-    // //     TCPTuple tuple = socket.toTuple();
-    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << std::get<0>(socketID) << " ";
-    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcAddr() << " ";
-    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcPort() << " ";
-    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "0.0.0.0" << " ";
-    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "0" << " ";
-    // //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "LISTEN" << " ";
-    // //     interfaceString << std::endl;
-    // // }
+    for (auto& [id, socket] : sockets) {
+        TCPTuple& socketTuple = socket.toTuple();
+        std::string state = TCPSocket::toString(socket.getState());
 
-    // for (auto clientSocket : clientSockets) {
-    //     int socketID = std::get<0>(clientSocket);
-    //     TCPSocket socket = std::get<1>(clientSocket);
-    //     TCPTuple tuple = socket.toTuple();
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << id << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getSrcAddr() << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getSrcPort() << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getDestAddr() << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getDestPort() << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << state << " ";
+        interfaceString << std::endl;
+    }
 
 
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << socketID << " ";
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcAddr() << " ";
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getSrcPort() << " ";
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getDestAddr() << " ";
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << tuple.getDestPort() << " ";
-    //     // interfaceString << std::setw(INTERFACE_COL_SIZE) << SocketStateString[socket.getState()] << " ";
-    //     interfaceString << std::setw(INTERFACE_COL_SIZE) << "#todo" << " ";
-    //     interfaceString << std::endl;
-    // }
+    // Print to file if specified
+    int spaceIdx = args.find(' ');
+    std::string filename = args.substr(0, spaceIdx);
+    if (filename.empty()) {
+        std::cout << dim << interfaceString.str() << dim_reset;
+    } else {
+        std::ofstream file(filename);
 
-    // // Print to file if specified
-    // int spaceIdx = args.find(' ');
-    // std::string filename = args.substr(0, spaceIdx);
-    // if (filename.empty()) {
-    //     std::cout << dim << interfaceString.str() << dim_reset;
-    // } else {
-    //     std::ofstream file(filename);
-
-    //     file << interfaceString.str();
-    //     file.close();
-    // }
+        file << interfaceString.str();
+        file.close();
+    }
 }
 
 void TCPCommands::accept_loop(int sockClient, int sockListener, std::string address) {
@@ -171,16 +154,15 @@ void TCPCommands::connect(std::string& args) {
             return;
         }
     }
-    unsigned int port = std::stoi(parsedArgs[1]);
+    uint16_t port = std::stoi(parsedArgs[1]);
 
     // Connect
-    // #todo implement failures e.g. ENOMEM EADDRINUSE EADDRNOTAVAIL
+    // TODO: implement specific failures e.g. ENOMEM EADDRINUSE EADDRNOTAVAIL
     int sock = tcpNode->connect(ip, port);
     if (sock < 0) {
         std::cerr << red << "Failed to connect to " << ip << ":" << port << color_reset << std::endl;
     }
-    std::cout << "connect returned " << sock << std::endl;
-    // std::cout << "Connected to " << ip << ":" << port << std::endl;
+    std::cout << dim "connect returned " << sock << color_reset << std::endl;
 }
 
 // Sends data to the given socket
@@ -199,38 +181,17 @@ void TCPCommands::send(std::string& args) {
         parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
     }
 
-    std::string sockID = parsedArgs[0];
+    std::string socketId = parsedArgs[0];
     std::string payload = args.substr(spaceIdx + 1);
-    std::cout << "your payload would be " << payload << std::endl;
+    std::cout << "your payload would be " << payload << std::endl
 
-    // #TODO make sure send socket is valid / open 
+    int numSent = tcpNode->write(socketId, payload);
+    if (numSent < 0) {
+        return;
+    }
 
-    // #TODO check not listener socket
-
-    // #TODO if in syn-received state, queue send messages
-
-    // #TODO if in closed wait state, segmentize buffer and send with ack
-
-    // #TODO if in listen state, convert to syn-sent state
-
-
-
-    /** 3.17.7 SEGMENT ARRIVES
-     * 
-     * #TODO
-     * - if received rst / other connection is closed, etc. 
-     * - refer to 3.17.7.1, send a reset if the state does not exist
-     * 
-     * - if in LISTEN state, do nothing is RST
-     * - if receive an ACK and no corresponding socket in incomplete queue, send RST
-     * - if SYN, queue for processing + update ack 
-     * - otherwise, just drop packet
-     * 
-     * in SYN-SENT state
-     * - make sure ACK is between ISN/unacked and last sent
-     * - if RST, drop segment and enter closed
-     * - if SYN, update our syn.una and syn.next
-     */
+    std::cout << dim << "write on " << payload.size() << " bytes returned "
+        << numSent << color_reset << std::endl;
 }
 
 void TCPCommands::recv(std::string& args) {
