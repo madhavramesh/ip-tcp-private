@@ -18,6 +18,11 @@ TCPSocket::TCPSocket(const TCPTuple& otherTuple) :
     retransmissionActive(false),
     lastRetransmitTime(std::chrono::steady_clock::now()) {}
 
+TCPSocket::~TCPSocket() {
+    retransmissionQueue = {};
+    completeConns = {};
+}
+
 TCPTuple TCPSocket::toTuple() {
     return socketTuple;
 }
@@ -54,12 +59,12 @@ uint32_t TCPSocket::getUnack() {
     return unack;
 }
 
-uint32_t TCPSocket::getSeqNum() {
-    return sendNext;
+uint32_t TCPSocket::getRecvNext() {
+    return recvBuffer.getNext();
 }
 
-uint32_t TCPSocket::getAckNum() {
-    return recvBuffer->getNext();
+uint32_t TCPSocket::getRecvWnd() {
+    return recvBuffer.getWindowSize();
 }
 
 uint32_t TCPSocket::getUnack() {
@@ -89,6 +94,10 @@ uint32_t TCPSocket::getSendWl2() {
     return sendWl2;
 }
 
+bool TCPSocket::getActiveOpen() {
+    return active_open;
+}
+
 void TCPSocket::initializeRecvBuffer(uint32_t seqNum) {
     recvBuffer.initializeWith(seqNum);
 }
@@ -97,6 +106,24 @@ void TCPSocket::initializeRecvBuffer(uint32_t seqNum) {
 void TCPSocket::socket_listen() {
     activeOpen = false;
     state = SocketState::LISTEN;
+    socketTuple = TCPTuple(NULL_IPADDR, socketTuple.getSrcPort(), NULL_IPADDR, 0);
+
+    sendWnd = RECV_WINDOW_SIZE;
+    sendWl1 = 0;
+    sendWl2 = 0;
+    iss = 0;
+    irs = 0;
+    unAck = 0;
+    sendNext = 0;
+
+    outOfOrderQueue = {};
+    retransmitAttempts = 0;
+    retransmissionActive = false;
+    retranmissionQueue = {};
+
+    recvBuffer = TCPCircularBuffer();
+    completeConns = {};
+    incompleteConns = {};
 }
 
 std::shared_ptr<TCPSocket> TCPSocket::socket_accept() {
@@ -195,11 +222,6 @@ int TCPSocket::write(int numBytes, std::string& payload) {
     return recvBuffer.write(numBytes, payload);
 }
 
-void TCPSocket::addToWaitQueue(std::unique_ptr<struct TCPPacket>& tcpPacket) {
-
-    waitToSendQueue.push_back(tcpPacket);
-}
-
 void TCPSocket::sendTCPPacket(std::unique_ptr<struct TCPPacket> tcpPacket) {
     std::shared_ptr<struct tcphdr> tcpHeader = tcpPacket->tcpHeader;
     std::string payload = tcpPacket->payload;
@@ -295,7 +317,23 @@ void TCPSocket::retransmitPackets() {
     }
 }
 
-std::unique_ptr<struct TCPPacket> TCPSocket::createTCPHeader(unsigned char flags, uint32_t seqNum, 
+void TCPSocket::flushRetransmission() {
+    if (!retransmissionActive) {
+        return;
+    }
+
+    for (auto& packet : retransmissionQueue) {
+        std::string newPayload = "";
+        newPayload.resize(sizeof(struct tcphdr));
+        memcpy(&newPayload[0], packet->tcpHeader.get(), sizeof(struct tcphdr));
+        memcpy(&newPayload[sizeof(struct tcphdr)], &packet->payload[0], packet->payload.size());
+
+        ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
+                        TCP_PROTOCOL_NUMBER); 
+    }
+}
+
+std::unique_ptr<struct TCPPacket> TCPSocket::createTCPPacket(unsigned char flags, uint32_t seqNum, 
         uint32_t ackNum, std::string payload) {
 
     std::unique_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();

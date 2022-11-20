@@ -30,8 +30,6 @@ const int MAX_RETRANSMITS = 5;          // Avoids the calculation of R1 and R2
 
 const int TCP_PROTOCOL_NUMBER = 6;
 
-const std::string NULL_IPADDR = "0.0.0.0";
-
 class TCPSocket {
     public:
         enum class SocketState {
@@ -77,7 +75,6 @@ class TCPSocket {
 
         TCPSocket(std::string localAddr, uint16_t localPort, std::string destAddr, uint16_t destPort);
         TCPSocket(const TCPTuple& otherTuple);
-        ~TCPSocket();
 
         TCPTuple toTuple();
 
@@ -101,7 +98,6 @@ class TCPSocket {
         uint16_t getSendWnd();
         uint32_t getSendWl1();
         uint32_t getSendWl2();
-        bool getActiveOpen();
 
         void socket_listen();
         std::shared_ptr<TCPSocket> socket_accept();
@@ -124,7 +120,7 @@ class TCPSocket {
 
         void retransmitPackets();
 
-        static uint16_t computeTCPChecksum(
+        uint16_t computeTCPChecksum(
             uint32_t virtual_ip_src,
             uint32_t virtual_ip_dst,
             std::shared_ptr<struct tcphdr> tcp_header,
@@ -177,8 +173,6 @@ class TCPSocket {
         std::deque<std::shared_ptr<TCPSocket>> completeConns;                   
         // SYN-RECEIVED state
         std::unordered_map<TCPTuple, std::shared_ptr<TCPSocket>> incompleteConns;  
-
-        void flushRetransmission();
 
         unsigned int generateISN(
             std::string& srcAddr,

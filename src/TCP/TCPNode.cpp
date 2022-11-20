@@ -42,6 +42,12 @@ std::shared_ptr<TCPSocket> TCPNode::getSocket(const TCPTuple& socketTuple) {
     return nullptr;
 }
 
+void TCPNode::deleteSocket(TCPTuple& socketTuple) {
+    int socketId = socket_tuple_table[socketTuple];
+    sd_table.erase(socketId);
+    socket_tuple_table.erase(socketTuple);
+}
+
 /**
  * @brief Creates a new ListenSocket. 
  * Returns the id of the newly created socket on success.
@@ -151,7 +157,7 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
     std::shared_ptr<TCPSocket> sock = sockIt->second;
     std::string payload(buf.begin(), buf.end());
 
-    auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
+    auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
     switch (sock->getState()) {
         case TCPSocket::SocketState::LISTEN:
             std::cerr << red << "error: remote socket unspecified" << color_reset << std::endl;
@@ -345,109 +351,64 @@ void TCPNode::handleClient(
     // ===================================================================================
 
     // 1) Check validity
-    
-    bool acceptable = true;
-    int segSeq   = tcpHeader->th_seq;
-    int recvNext = sock->irs + sock->recvBuffer.getNext();
-    int recvLast = recvNext + sock->recvBuffer.getWindowSize();
-
-    if ((payload.size() == 0) && (tcpHeader->th_win == 0)) {         // case #1
-        if (!(segSeq == recvNext)) {
-            acceptable = false;
-        }
-    } else if ((payload.size() == 0) && (tcpHeader->th_win > 0)) {   // case #2
-        if (!(recvNext <= segSeq && segSeq < recvLast)) {
-            acceptable = false;
-        }
-    } else if ((tcpHeader->th_win == 0) && (tcpHeader->th_win == 0)) {  // case #3
-            acceptable = false;
-    } else {                                                            // case #4
-        if (!((recvNext <= segSeq && segSeq < recvLast) ||
-            (recvNext <= segSeq + payload.size() - 1 && segSeq + payload.size() - 1 < recvLast))) {
-            acceptable = false;
-        }
-    }
-
+    bool acceptable = segmentIsAcceptable(sock, tcpHeader);
     if (!acceptable) {
         if (tcpHeader->th_flags & TH_RST) {
             return;
         }
-        tcp_seq ack = tcpHeader->th_ack;
         
-        if (ackBitSet && sock->getState() == TCPSocket::SocketState::SYN_RECV) {
-            if (sock->getUnack < ack && ack <= sock->getSendNext()) { // #todo double check
-                sock->setState(TCPSocket::SocketState::ESTABLISHED);
-                sock->sndWnd = tcpHeader->th_win;
-
-                sock->seqNum = tcpHeader->th_ack;
-                sock->ackNum = tcpHeader->th_seq;
-                // continue processing in ESTABLISHED state
-            } else {
-                // send reset
-                sock->seqNum = tcpHeader->th_ack;
-                auto tcpPacket = sock->createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
-                sock->sendTCPPacket(tcpPacket);
-                return;
-            }
         // Send ACK
-        auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
+        auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
         sock->sendTCPPacket(tcpPacket);
         return;
     }
-    }
     
-    // trim 
-    // TODO: ADJUST TCP HEADER 
-    if (segSeq < recvNext) {
-        payload = payload.substr(recvNext - segSeq + 1);
-    }
-    if (recvLast <= segSeq + payload.size() - 1) {
-        payload = payload.substr(0, recvLast - segSeq);
-    }
+    // Trim payload
+    trimPayload(tcpHeader, payload);
     
     // 2) Check the reset bit
     bool resetBitSet = tcpHeader->th_flags & TH_RST;
-
     if (resetBitSet && (sock->getState() == TCPSocket::SocketState::SYN_RECV)) {
-        // If initiated with passive open, return back to listen state
-        client_port_table[destPort].erase(socketId);
-        client_sd_table.erase(socketId);
+        // Delete TCB
+        int socketId = socket_tuple_table[sock->toTuple()];
+        deleteSocket(sock->toTuple());
 
-        // # potentially consider active vs passive open
+        // Flush retransmissionQueue
+        sock->flushRetransmission();
 
-        // # flush
-        flushSendBuffer(socket);
-
+        // If initiated with passive open, convert to listener socket if one doesn't exist
+        if (!sock->getActiveOpen()) {
+            sock->socket_listen();
+            if (!socket_tuple_table.count(sock->toTuple())) {
+                sd_table.insert(std::make_pair(socketId, sock));
+                socket_tuple_table.insert(std::make_pair(sock->toTuple(), socketId));
+            }
+        }
         return;
-    }
-
-    else if (resetBitSet && (
+    } else if (resetBitSet && (
         sock->getState() == TCPSocket::SocketState::ESTABLISHED ||
         sock->getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
         sock->getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
-        sock->getState() == TCPSocket::SocketState::CLOSE_WAIT ||
-        )) {
-        // If the RST bit is set, then any outstanding RECEIVEs and SEND should receive "reset" responses. 
-        // All segment queues should be flushed. Users should also receive an unsolicited general "connection reset" signal. 
+        sock->getState() == TCPSocket::SocketState::CLOSE_WAIT)) {
+        // If the RST bit is set, then any outstanding RECEIVEs and SEND should receive 
+        // "reset" responses. 
+        // All segment queues should be flushed. Users should also receive an unsolicited general 
+        // "connection reset" signal. 
         // Enter the CLOSED state, delete the TCB, and return
 
-        // #todo send reset responses to outstanding receives and sends
-        // # flush
-        flushSendBuffer(socket);
-        std::cout << "connection reset" << std::endl;
-        sock->setSite(TCPSocket::SocketState::CLOSED);
+        // #TODO: send reset responses to outstanding receives and sends
 
+        std::cerr << red << "connection reset" << color_reset << std::endl;
+        // Flush retransmissionQueue and delete TCB
+        sock->flushRetransmission();
+        deleteSocket(sock->toTuple());
         return;
-    }
-
-    else if (resetBitSet && (
+    } else if (resetBitSet && (
         sock->getState() == TCPSocket::SocketState::CLOSING ||
         sock->getState() == TCPSocket::SocketState::LAST_ACK ||
         sock->getState() == TCPSocket::SocketState::TIME_WAIT)) {
-            // If the RST bit is set, then enter the CLOSED state, delete the TCB, and return.
-            sock->setState(TCPSocket::SocketState::CLOSED);
-            // client_port_table[destPort].erase(socketId);
-            // client_sd_table.erase(socketId);
+            // delete TCB
+            deleteSocket(sock->toTuple());
             return;
     }
 
@@ -455,19 +416,21 @@ void TCPNode::handleClient(
 
     // 4) Check SYN bit
     bool synBitSet = tcpHeader->th_flags & TH_SYN;
-
     if (synBitSet && (sock->getState() == TCPSocket::SocketState::SYN_RECV)) {
-        // Check if passive OPEN 
-        if (!socket.activeOpen) {
-            // Return back to listen state
-            client_port_table[destPort].erase(socketId);
-            client_sd_table.erase(socketId);
-            
-            return;
+        // Delete TCB
+        int socketId = socket_tuple_table[sock->toTuple()];
+        deleteSocket(sock->toTuple());
+
+        // If initiated with passive open, convert to listener socket if one doesn't exist
+        if (!sock->getActiveOpen()) {
+            sock->socket_listen();
+            if (!socket_tuple_table.count(sock->toTuple())) {
+                sd_table.insert(std::make_pair(socketId, sock));
+                socket_tuple_table.insert(std::make_pair(sock->toTuple(), socketId));
+            }
         }
-    } 
-    
-    else if (synBitSet && (
+        return;
+    } else if (synBitSet && (
         sock->getState() == TCPSocket::SocketState::ESTABLISHED ||
         sock->getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
         sock->getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
@@ -475,10 +438,18 @@ void TCPNode::handleClient(
         sock->getState() == TCPSocket::SocketState::CLOSING ||
         sock->getState() == TCPSocket::SocketState::LAST_ACK ||
         sock->getState() == TCPSocket::SocketState::TIME_WAIT)) {
-            // note, this part does not follow rfc fully it seems
-            // Flush
-            flushSendBuffer(socket);
-        }
+            // RFC 793: send reset response
+            auto tcpPacket = sock->createTCPPacket(TH_RST, sock->getSeqNum(), sock->getAckNum(), "");
+            sock->sendTCPPacket(tcpPacket);
+
+            // #TODO: send reset responses to outstanding receives and sends
+
+            std::cerr << red << "connection reset" << color_reset << std::endl;
+            // Flush segment queues and delete TCB
+            sock->flushRetransmission();
+            deleteSocket(sock->toTuple());
+            return;
+    }
 
      // 5) Check ACK bit
     bool ackBitSet = tcpHeader->th_flags & TH_ACK;
@@ -523,7 +494,7 @@ void TCPNode::handleClient(
                 // This is reached if an ack has been received for something that hasn't even 
                 // been sent yet.
                 // Send an ack w/ old seq and ack nums
-                auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
+                auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
                 sock->sendTCPPacket(tcpPacket);
                 return;
             }
@@ -685,13 +656,6 @@ void TCPNode::handleClient(
             // restart the 2 MSL timeout.
             // #todo restart timer
         }    
-        // If syn in window, it is an error
-        // send reset
-        auto tcpPacket = sock->createTCPPacket(TH_RST, sock->getSeqNum(), sock->getAckNum(), "");
-        sock->sendTCPPacket(tcpPacket);
-
-        // Send reset response to user by making read/send return 0
-
         return;
     }
 }
@@ -786,9 +750,7 @@ void transitionFromSynSent(std::shared_ptr<TCPSocket> sock, std::shared_ptr<stru
         // Otherwise (no ACK), drop the segment and return.
         if (ackBitSet) {
             std::cerr << "error: connection reset" << std::endl;
-            int socketId = socket_tuple_table[sock->toTuple()];
-            socket_tuple_table.erase(sock->toTuple());
-            sd_table.erase(socketId);
+            deleteSocket(sock->toTuple());
         } 
         return;
     }
@@ -836,6 +798,54 @@ void transitionFromSynSent(std::shared_ptr<TCPSocket> sock, std::shared_ptr<stru
     }
 
     // 5) If neither SYN or RST bits are set, return and drop segment
+}
+
+bool segmentIsAcceptable(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeader) {
+    uint32_t segSeq   = tcpHeader->th_seq;
+    uint32_t segEnd   = calculateSegmentEnd(tcpHeader, payload);
+    uint32_t recvNext = sock->getRecvNext();
+    uint32_t recvLast = recvNext + sock->getRecvWnd();
+
+    // Segment length = 0, receive window = 0, SEG.SEQ = RCV.NXT
+    if ((payload.size() == 0) && (tcpHeader->th_win == 0)) {
+        if (!(segSeq == recvNext)) {
+            return false
+        }
+    }
+    // Segment length = 0, receive window > 0, RCV.NXT <= SEG.SEQ < RCV.NXT + RCV.WND
+    else if ((payload.size() == 0) && (tcpHeader->th_win > 0)) {
+        if (!(recvNext <= segSeq && segSeq < recvLast)) {
+            return false;
+        }
+    } 
+    // Segment length > 0, receive window = 0, not acceptable
+    else if ((tcpHeader->th_win == 0) && (tcpHeader->th_win == 0)) {
+        return false;
+    } 
+    // Segment length > 0, receive window = 0, RCV.NXT <= SEG.SEQ < RCV.NXT + RCV.WND or 
+    // RCV.NXT <= SEG.SEQ + SEG.LEN - 1 < RCV.NXT + RCV.WND
+    else {
+        if (!((recvNext <= segSeq && segSeq < recvLast) ||
+            (recvNext <= segSeq + payload.size() - 1 && segSeq + payload.size() - 1 < recvLast))) {
+            return false;
+        }
+    }
+    return true;
+}
+
+void trimPayload(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
+    uint32_t segSeq   = tcpHeader->th_seq;
+    uint32_t segEnd   = calculateSegmentEnd(tcpHeader, payload);
+    uint32_t recvNext = sock->getRecvNext();
+    uint32_t recvLast = recvNext + sock->getRecvWnd();
+
+    if (segSeq < recvNext) {
+        payload = payload.substr(recvNext - segSeq);
+        tcpHeader->th_seq = recvNext;
+    }
+    if (segEnd >= recvLast) {
+        payload = payload.substr(0, sock->getRecvWnd());
+    }
 }
 
 // #todo need to rewrite 
@@ -896,6 +906,19 @@ void TCPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& paylo
     memcpy(tcpHeader.get(), &payload[0], sizeof(tcphdr));
 
     std::string remainingPayload = payload.substr(sizeof(tcphdr));
+
+    // Validate checksum
+    uint16_t prevCheckSum = tcpHeader->th_sum;
+    tcpHeader->th_sum = 0;
+
+    uint16_t srcIP = ipHeader->ip_src.s_addr;
+    uint16_t destIP = ipHeader->ip_dst.s_addr;
+    if (TCPSocket::calculateTCPchecksum(srcIP, destIP, tcpHeader, remainingPayload) != 
+        prevCheckSum) {
+        return;
+    }
+    tcpHeader->th_sum = prevCheckSum;
+
     receive(ipHeader, tcpHeader, remainingPayload);
 }
 

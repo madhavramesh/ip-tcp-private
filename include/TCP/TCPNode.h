@@ -107,6 +107,7 @@ class TCPNode {
         
         // Gets the TCP socket corresponding to a tuple (srcAddr, srcPort, destAddr, destPort)
         std::shared_ptr<TCPSocket> getSocket(const TCPTuple& socketTuple);
+        void deleteSocket(TCPTuple& socketTuple);
 
         TCPTuple extractTCPTuple(
             std::shared_ptr<struct ip> ipHeader,
@@ -146,6 +147,9 @@ class TCPNode {
             std::shared_ptr<struct tcphdr> tcpHeader
         );
 
+        bool segmentIsAcceptable(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeader);
+
+        void trimPayload(std::shared_ptr<struct tcphdr> tcpHeder, std::string& payload);
 
         // Allocates a random ephemeral port
         uint16_t allocatePort(std::string& srcAddr, std::string& destAddr, uint16_t destPort);
