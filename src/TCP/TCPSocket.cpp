@@ -50,16 +50,16 @@ void TCPSocket::setIrs(uint32_t newIrs) {
     irs = newIrs;
 }
 
+void TCPSocket::setRecvWindow(uint32_t newRecvWindow) {
+    recvBuffer.rec = newRecvWindow;
+}
+
 uint32_t TCPSocket::getUnack() {
     return unack;
 }
 
-uint32_t TCPSocket::getSeqNum() {
-    return sendNext;
-}
-
-uint32_t TCPSocket::getAckNum() {
-    return recvBuffer->getNext();
+uint32_t TCPSocket::getRecvNext() {
+    return recvBuffer.getNext();
 }
 
 uint32_t TCPSocket::getUnack() {
@@ -89,8 +89,24 @@ uint32_t TCPSocket::getSendWl2() {
     return sendWl2;
 }
 
+int TCPSocket::getRecvWinSize() {
+    return recvBuffer.getWindowSize();
+}
+
+bool TCPSocket::isActiveOpen() {
+    return activeOpen;
+}
+
 void TCPSocket::initializeRecvBuffer(uint32_t seqNum) {
     recvBuffer.initializeWith(seqNum);
+}
+
+int TCPSocket::putRecvBuf(int numBytes, std::string& payload) {
+    return recvBuffer.put(numBytes, payload);
+}
+
+bool TCPSocket::retransmissionQueueEmpty() {
+    return retransmissionQueue.empty();
 }
 
 

@@ -32,6 +32,12 @@ const int TCP_PROTOCOL_NUMBER = 6;
 
 class TCPSocket {
     public:
+
+        struct TCPPacket {
+            std::shared_ptr<struct tcphdr> tcpHeader;
+            std::string payload;
+        };
+        
         enum class SocketState {
             LISTEN,
             SYN_RECV,
@@ -109,19 +115,27 @@ class TCPSocket {
         void setAckNum(uint32_t newAckNum);
         void setSeqNum(uint32_t newSeqNum);
         void setIrs(uint32_t newIrs);
+        void setRecvWnd(uint16_t newRecvWnd);
         
         uint32_t getUnack();
-        uint32_t getSeqNum();
-        uint32_t getAckNum();
+        uint32_t getRecvNext();
         uint16_t getSendNext();
         uint32_t getIss();
         uint32_t getIrs();
         uint16_t getSendWnd();
         uint32_t getSendWl1();
         uint32_t getSendWl2();
+        bool isActiveOpen();
+
+        int getRecvWinSize();
 
 
         void setRecvBufNext(uint32_t newRecvBufNext);
+        int putRecvBuf(int numBytes, std::string& payload);
+
+        bool retransmissionQueueEmpty();
+
+        void initializeRecvBuffer(uint32_t seqNum);
 
 //
         // void initializeISS();
@@ -142,10 +156,6 @@ class TCPSocket {
         uint32_t unAck { 0 };
         uint32_t sendNext { 0 };
 
-        struct TCPPacket {
-            std::shared_ptr<struct tcphdr> tcpHeader;
-            std::string payload;
-        };
         // TCP Packets that were written while node was in SYN_SEND or SYN_RECV
         std::deque<std::unique_ptr<TCPPacket>> waitToSendQueue;
         // TCP Packets that were received out of order
