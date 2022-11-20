@@ -85,7 +85,7 @@ class TCPSocket {
         void socket_connect();
 
         void addIncompleteConnection(std::shared_ptr<TCPSocket> newSock);
-        void addToWaitQueue(std::shared_ptr<struct TCPPacket>& tcpPacket);
+        void addToWaitQueue(std::unique_ptr<struct TCPPacket>& tcpPacket);
 
         int read(int numBytes, std::string& buf);
         int write(int numBytes, std::string& payload);
@@ -97,7 +97,7 @@ class TCPSocket {
             std::string& payload
         );
 
-        std::shared_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
+        std::unique_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
         uint32_t ackNum, std::string payload);
 
         void retransmitPackets();
@@ -175,8 +175,6 @@ class TCPSocket {
         std::deque<std::shared_ptr<TCPSocket>> completeConns;                   
         // SYN-RECEIVED state
         std::unordered_map<TCPTuple, std::shared_ptr<TCPSocket>> incompleteConns;  
-
-        std::unique_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, std::string payload);
 
         uint16_t computeTCPChecksum(
             uint32_t virtual_ip_src,

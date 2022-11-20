@@ -340,204 +340,16 @@ void TCPNode::handleClient(
         return;
     }
 
-        // =============================================================================================================
-        // OTHER STATES
-        // =============================================================================================================
-
-        // 1) Check validity
-        
-        bool acceptable = true;
-        int segSeq   = tcpHeader->th_seq;
-        int recvNext = sock->irs + sock->recvBuffer.getNext();
-        int recvLast = recvNext + sock->recvBuffer.getWindowSize();
-
-        if ((payload.size() == 0) && (tcpHeader->th_win == 0)) {         // case #1
-            if (!(segSeq == recvNext)) {
-                acceptable = false;
-            }
-        } else if ((payload.size() == 0) && (tcpHeader->th_win > 0)) {   // case #2
-            if (!(recvNext <= segSeq && segSeq < recvLast)) {
-                acceptable = false;
-            }
-        } else if ((tcpHeader->th_win == 0) && (tcpHeader->th_win == 0)) {  // case #3
-                acceptable = false;
-        } else {                                                            // case #4
-            if (!((recvNext <= segSeq && segSeq < recvLast) ||
-                (recvNext <= segSeq + payload.size() - 1 && segSeq + payload.size() - 1 < recvLast))) {
-                acceptable = false;
-            }
-        }
-
-        if (!acceptable) {
-            if (tcpHeader->th_flags & TH_RST) {
-                return;
-            }
-            // Send ACK
-            auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
-            sock->sendTCPPacket(tcpPacket);
-            return;
-        }
-
-        // trim 
-        // TODO: ADJUST TCP HEADER 
-        if (segSeq < recvNext) {
-            payload = payload.substr(recvNext - segSeq + 1);
-        }
-        if (recvLast <= segSeq + payload.size() - 1) {
-            payload = payload.substr(0, recvLast - segSeq);
-        }
-        
-        // 2) Check the reset bit
-        bool resetBitSet = tcpHeader->th_flags & TH_RST;
-
-        if (resetBitSet && (sock->getState() == TCPSocket::SocketState::SYN_RECV)) {
-            // If initiated with passive open, return back to listen state
-            client_port_table[destPort].erase(socketId);
-            client_sd_table.erase(socketId);
-
-            // # potentially consider active vs passive open
-
-            // # flush
-            flushSendBuffer(socket);
-
-            return;
-        }
-
-        else if (resetBitSet && (
-            sock->getState() == TCPSocket::SocketState::ESTABLISHED ||
-            sock->getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
-            sock->getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
-            sock->getState() == TCPSocket::SocketState::CLOSE_WAIT ||
-            )) {
-            // If the RST bit is set, then any outstanding RECEIVEs and SEND should receive "reset" responses. 
-            // All segment queues should be flushed. Users should also receive an unsolicited general "connection reset" signal. 
-            // Enter the CLOSED state, delete the TCB, and return
-
-            // #todo send reset responses to outstanding receives and sends
-            // # flush
-            flushSendBuffer(socket);
-            std::cout << "connection reset" << std::endl;
-            sock->setSite(TCPSocket::SocketState::CLOSED);
-
-            return;
-        }
-
-        else if (resetBitSet && (
-            sock->getState() == TCPSocket::SocketState::CLOSING ||
-            sock->getState() == TCPSocket::SocketState::LAST_ACK ||
-            sock->getState() == TCPSocket::SocketState::TIME_WAIT)) {
-                // If the RST bit is set, then enter the CLOSED state, delete the TCB, and return.
-                sock->setState(TCPSocket::SocketState::CLOSED);
-                // client_port_table[destPort].erase(socketId);
-                // client_sd_table.erase(socketId);
-            // Otherwise, SND.UNA < SEG.ACK =< SND.NXT, and the ACK is acceptable. 
-        }
-
-        // 2) Check RST bit
-        bool rstBitSet = tcpHeader->th_flags & TH_RST;
-        if (rstBitSet) {
-            // Optional: deal with blind reset attack
-
-            // If ACK was also acceptable then signal to the user "error: connection reset", drop the segment, 
-            // enter CLOSED state, delete TCB, and return. 
-            // Otherwise (no ACK), drop the segment and return.
-            if (ackBitSet) {
-                std::cerr << "Error: connection reset" << std::endl;
-                clientSock.setState(TCPSocket::SocketState::CLOSED);
-                return;
-            } else {
-                return;
-            }
-        }
-
-        // 3) Check security
-        // N/A
-
-        // 4) Check SYN bit
-        bool synBitSet = tcpHeader->th_flags & TH_SYN;
-
-        if (synBitSet && (sock->getState() == TCPSocket::SocketState::SYN_RECV)) {
-            // Check if passive OPEN 
-            if (!socket.activeOpen) {
-                // Return back to listen state
-                client_port_table[destPort].erase(socketId);
-                client_sd_table.erase(socketId);
-                
-                return;
-            }
-        } 
-        
-        else if (synBitSet && (
-            sock->getState() == TCPSocket::SocketState::ESTABLISHED ||
-            sock->getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
-            sock->getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
-            sock->getState() == TCPSocket::SocketState::CLOSE_WAIT ||
-            sock->getState() == TCPSocket::SocketState::CLOSING ||
-            sock->getState() == TCPSocket::SocketState::LAST_ACK ||
-            sock->getState() == TCPSocket::SocketState::TIME_WAIT)) {
-                // note, this part does not follow rfc fully it seems
-                // Flush
-                flushSendBuffer(socket);
-
-                // If syn in window, it is an error
-                // send reset
-                auto tcpPacket = sock->createTCPPacket(TH_RST, sock->getSeqNum(), sock->getAckNum(), "");
-                sock->sendTCPPacket(tcpPacket);
-        // "This step should be reached only if the ACK is ok, or there is no ACK, and the segment did not contain a RST."
-        if (synBitSet) {
-            // "If the SYN bit is on and the security/compartment is acceptable, 
-            // then RCV.NXT is set to SEG.SEQ+1, IRS is set to SEG.SEQ. 
-            // SND.UNA should be advanced to equal SEG.ACK (if there is an ACK), 
-            // and any segments on the retransmission queue that are thereby acknowledged should be removed."
-
-            // Note: .next is relative
-            clientSock.recvBuffer.incrementNext(1); // why not th_seq + payload size? #todo
-            clientSock.irs = tcpHeader->th_seq;
-            if (ackBitSet) {
-                clientSock.setUnack(tcpHeader->th_ack);
-            }
-            // #todo transmission queue stuff 
-            clientSock.receiveTCPPacket()
-
-            // "If SND.UNA > ISS (our SYN has been ACKed), change the connection state to ESTABLISHED, form an ACK segment
-            // <SEQ=SND.NXT><ACK=RCV.NXT><CTL=ACK>
-            // and send it"
-            if (clientSock.getUnack() > clientSock.iss) {
-                clientSock.setState(TCPSocket::SocketState::ESTABLISHED);
-                auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), getAckNum(), "");
-                clientSock.sendTCPPacket(tcpPacket);
-                // #todo make sure you're not supposed to return here
-            } else {
-                // Otherwise, enter SYN-RECEIVED (simultaneous open) and form a SYN+ACK segment
-                // <SEQ=ISS><ACK=RCV.NXT><CTL=SYN,ACK>
-                // and send it
-                auto tcpPacket = clientSock.createTCPPacket(TH_SYN | TH_ACK, clientSock.getIss(), clientSock.getAckNum(), "");   
-                clientSock.sendTCPPacket(tcpPacket);
-
-                // Set variables
-                clientSock.setSendWnd(tcpHeader->th_win);
-                clientSock.setSendWl1(tcpHeader->th_seq);
-                clientSock.setSendWl2(tcpHeader->th_ack);
-
-                // #todo queue payload for processing after established state
-                // #todo make sure you're not supposed to return here
-            }
-        }
-
-        // 5) If neither SYN or RST bits are set, return and drop segment
-        return;
-    }
-
-    // =============================================================================================================
+    // ===================================================================================
     // OTHER STATES
-    // =============================================================================================================
+    // ===================================================================================
 
     // 1) Check validity
     
     bool acceptable = true;
     int segSeq   = tcpHeader->th_seq;
-    int recvNext = clientSock.irs + clientSock.recvBuffer.getNext();
-    int recvLast = recvNext + clientSock.recvBuffer.getWindowSize();
+    int recvNext = sock->irs + sock->recvBuffer.getNext();
+    int recvLast = recvNext + sock->recvBuffer.getWindowSize();
 
     if ((payload.size() == 0) && (tcpHeader->th_win == 0)) {         // case #1
         if (!(segSeq == recvNext)) {
@@ -578,11 +390,12 @@ void TCPNode::handleClient(
                 return;
             }
         // Send ACK
-        auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), clientSock.getAckNum(), "");
-        clientSock.sendTCPPacket(tcpPacket);
+        auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
+        sock->sendTCPPacket(tcpPacket);
         return;
     }
-
+    }
+    
     // trim 
     // TODO: ADJUST TCP HEADER 
     if (segSeq < recvNext) {
@@ -595,7 +408,7 @@ void TCPNode::handleClient(
     // 2) Check the reset bit
     bool resetBitSet = tcpHeader->th_flags & TH_RST;
 
-    if (resetBitSet && (clientSock.getState() == TCPSocket::SocketState::SYN_RECV)) {
+    if (resetBitSet && (sock->getState() == TCPSocket::SocketState::SYN_RECV)) {
         // If initiated with passive open, return back to listen state
         client_port_table[destPort].erase(socketId);
         client_sd_table.erase(socketId);
@@ -609,10 +422,10 @@ void TCPNode::handleClient(
     }
 
     else if (resetBitSet && (
-        clientSock.getState() == TCPSocket::SocketState::ESTABLISHED ||
-        clientSock.getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
-        clientSock.getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
-        clientSock.getState() == TCPSocket::SocketState::CLOSE_WAIT ||
+        sock->getState() == TCPSocket::SocketState::ESTABLISHED ||
+        sock->getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
+        sock->getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
+        sock->getState() == TCPSocket::SocketState::CLOSE_WAIT ||
         )) {
         // If the RST bit is set, then any outstanding RECEIVEs and SEND should receive "reset" responses. 
         // All segment queues should be flushed. Users should also receive an unsolicited general "connection reset" signal. 
@@ -622,17 +435,17 @@ void TCPNode::handleClient(
         // # flush
         flushSendBuffer(socket);
         std::cout << "connection reset" << std::endl;
-        clientSock.setSite(TCPSocket::SocketState::CLOSED);
+        sock->setSite(TCPSocket::SocketState::CLOSED);
 
         return;
     }
 
     else if (resetBitSet && (
-        clientSock.getState() == TCPSocket::SocketState::CLOSING ||
-        clientSock.getState() == TCPSocket::SocketState::LAST_ACK ||
-        clientSock.getState() == TCPSocket::SocketState::TIME_WAIT)) {
+        sock->getState() == TCPSocket::SocketState::CLOSING ||
+        sock->getState() == TCPSocket::SocketState::LAST_ACK ||
+        sock->getState() == TCPSocket::SocketState::TIME_WAIT)) {
             // If the RST bit is set, then enter the CLOSED state, delete the TCB, and return.
-            clientSock.setState(TCPSocket::SocketState::CLOSED);
+            sock->setState(TCPSocket::SocketState::CLOSED);
             // client_port_table[destPort].erase(socketId);
             // client_sd_table.erase(socketId);
             return;
@@ -643,7 +456,7 @@ void TCPNode::handleClient(
     // 4) Check SYN bit
     bool synBitSet = tcpHeader->th_flags & TH_SYN;
 
-    if (synBitSet && (clientSock.getState() == TCPSocket::SocketState::SYN_RECV)) {
+    if (synBitSet && (sock->getState() == TCPSocket::SocketState::SYN_RECV)) {
         // Check if passive OPEN 
         if (!socket.activeOpen) {
             // Return back to listen state
@@ -655,80 +468,105 @@ void TCPNode::handleClient(
     } 
     
     else if (synBitSet && (
-        clientSock.getState() == TCPSocket::SocketState::ESTABLISHED ||
-        clientSock.getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
-        clientSock.getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
-        clientSock.getState() == TCPSocket::SocketState::CLOSE_WAIT ||
-        clientSock.getState() == TCPSocket::SocketState::CLOSING ||
-        clientSock.getState() == TCPSocket::SocketState::LAST_ACK ||
-        clientSock.getState() == TCPSocket::SocketState::TIME_WAIT)) {
+        sock->getState() == TCPSocket::SocketState::ESTABLISHED ||
+        sock->getState() == TCPSocket::SocketState::FIN_WAIT_1 ||
+        sock->getState() == TCPSocket::SocketState::FIN_WAIT_2 ||
+        sock->getState() == TCPSocket::SocketState::CLOSE_WAIT ||
+        sock->getState() == TCPSocket::SocketState::CLOSING ||
+        sock->getState() == TCPSocket::SocketState::LAST_ACK ||
+        sock->getState() == TCPSocket::SocketState::TIME_WAIT)) {
             // note, this part does not follow rfc fully it seems
             // Flush
             flushSendBuffer(socket);
+        }
 
-        // ESTABLISHED, FIN_WAIT1, FIN_WAIT2, and CLOSE_WAIT states
-        // Note, the reason why there are ORs is because they all have to do at least the processing for 
-        // the established state.
-        if (ackBitSet && (
-            sock->getState() == TCPSocket::SocketState::ESTABLISHED || sock->getState() == TCPSocket::SocketState::FIN_WAIT1  ||
-            sock->getState() == TCPSocket::SocketState::FIN_WAIT2   || sock->getState() == TCPSocket::SocketState::CLOSE_WAIT ||
-            sock->getState() == TCPSocket::SocketState::CLOSING)) {
+     // 5) Check ACK bit
+    bool ackBitSet = tcpHeader->th_flags & TH_ACK;
+    if (!ackBitSet) {
+        return;
+    }
+    tcp_seq ack = tcpHeader->th_ack;
+    
+    if (ackBitSet && sock->getState() == TCPSocket::SocketState::SYN_RECV) {
+        if (sock->getUnack < ack && ack <= sock->getSendNext()) { // #todo double check
+            sock->setState(TCPSocket::SocketState::ESTABLISHED);
+            sock->sndWnd = tcpHeader->th_win;
 
-                // Update unAck, if needed
-                if (sock->unAck < ack && ack <= sock->getSendNext()) { 
-                    // If ACK follows within the window, then it is valid
-                    // Update ack 
-                    sock->unAck = ack;
+            sock->seqNum = tcpHeader->th_ack;
+            sock->ackNum = tcpHeader->th_seq;
+            // continue processing in ESTABLISHED state
+        } else {
+            // send reset
+            sock->seqNum = tcpHeader->th_ack;
+            auto tcpPacket = sock->createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
+            sock->sendTCPPacket(tcpPacket);
+            return;
+        }
+    }
 
-                    // #todo handle retransmission queue: remove those that have been acked
-                } else if (ack > sock->getSendNext()) {
-                    // This is reached if an ack has been received for something that hasn't even 
-                    // been sent yet.
-                    // Send an ack w/ old seq and ack nums
-                    auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
-                    sock->sendTCPPacket(tcpPacket);
-                    return;
-                }
+    // ESTABLISHED, FIN_WAIT1, FIN_WAIT2, and CLOSE_WAIT states
+    // Note, the reason why there are ORs is because they all have to do at least the processing for 
+    // the established state.
+    if (ackBitSet && (
+        sock->getState() == TCPSocket::SocketState::ESTABLISHED || sock->getState() == TCPSocket::SocketState::FIN_WAIT1  ||
+        sock->getState() == TCPSocket::SocketState::FIN_WAIT2   || sock->getState() == TCPSocket::SocketState::CLOSE_WAIT ||
+        sock->getState() == TCPSocket::SocketState::CLOSING)) {
 
-                // Update send window, if needed
-                if (sock->unAck <= ack && ack <= sock->getSendNext()) {
-                    // If (SND.WL1 < SEG.SEQ or (SND.WL1 = SEG.SEQ and SND.WL2 =< SEG.ACK)), 
-                    // set SND.WND <- SEG.WND, set SND.WL1 <- SEG.SEQ, and set SND.WL2 <- SEG.ACK.
-                    if (sock->getSendWl1() < tcpHeader->th_seq || 
-                        // WL1 records the sequence number of the last segment used to update SND.WND, 
-                        // and that SND.WL2 records the acknowledgment number of the last segment used to update SND.WND. 
-                        // The check here prevents using old segments to update the window.
-                        (sock->getSendWl1() == tcpHeader->th_seq && sock->getSendWl2() <= tcpHeader->th_ack)) {
-                        sock->setSendWnd(tcpHeader->th_win);
-                        sock->setSendWl1(tcpHeader->th_seq);
-                        sock->setSendWl2(tcpHeader->th_ack);
-                        }
-                }
-                    
-                // FIN-WAIT-1
-                if (sock->getState() == TCPSocket::SocketState::FIN_WAIT1) {
-                    // If our FIN segment we previously sent was acknowledged, move to FIN_WAIT2
-                    if (ack == sock->getSendNext()) { // #todo double check this logic
-                        sock->setState(TCPSocket::SocketState::FIN_WAIT2);
+            // Update unAck, if needed
+            if (sock->unAck < ack && ack <= sock->getSendNext()) { 
+                // If ACK follows within the window, then it is valid
+                // Update ack 
+                sock->unAck = ack;
+
+                // #todo handle retransmission queue: remove those that have been acked
+            } else if (ack > sock->getSendNext()) {
+                // This is reached if an ack has been received for something that hasn't even 
+                // been sent yet.
+                // Send an ack w/ old seq and ack nums
+                auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
+                sock->sendTCPPacket(tcpPacket);
+                return;
+            }
+
+            // Update send window, if needed
+            if (sock->unAck <= ack && ack <= sock->getSendNext()) {
+                // If (SND.WL1 < SEG.SEQ or (SND.WL1 = SEG.SEQ and SND.WL2 =< SEG.ACK)), 
+                // set SND.WND <- SEG.WND, set SND.WL1 <- SEG.SEQ, and set SND.WL2 <- SEG.ACK.
+                if (sock->getSendWl1() < tcpHeader->th_seq || 
+                    // WL1 records the sequence number of the last segment used to update SND.WND, 
+                    // and that SND.WL2 records the acknowledgment number of the last segment used to update SND.WND. 
+                    // The check here prevents using old segments to update the window.
+                    (sock->getSendWl1() == tcpHeader->th_seq && sock->getSendWl2() <= tcpHeader->th_ack)) {
+                    sock->setSendWnd(tcpHeader->th_win);
+                    sock->setSendWl1(tcpHeader->th_seq);
+                    sock->setSendWl2(tcpHeader->th_ack);
                     }
-                }
-
-                // FIN-WAIT-2
-                if (sock->getState() == TCPSocket::SocketState::FIN_WAIT2) {
-                    // if the retransmission queue is empty, 
-                    // the user's CLOSE can be acknowledged ("ok") but do not delete the TCB.
-                    if (sock->retransmissionQueue.empty()) {
-                        std::cout << "ok" << std::endl;
-                    }
-                }
-
-                if (sock->getState() == TCPSocket::SocketState::CLOSING) {
-                    // If the ACK acknowledges our FIN, enter the TIME-WAIT state; otherwise, ignore the segment
-                    if (ack == sock->getSendNext()) { // #todo double check this logic
-                        sock->setState(TCPSocket::SocketState::TIME_WAIT);
-                    }
+            }
+                
+            // FIN-WAIT-1
+            if (sock->getState() == TCPSocket::SocketState::FIN_WAIT1) {
+                // If our FIN segment we previously sent was acknowledged, move to FIN_WAIT2
+                if (ack == sock->getSendNext()) { // #todo double check this logic
+                    sock->setState(TCPSocket::SocketState::FIN_WAIT2);
                 }
             }
+
+            // FIN-WAIT-2
+            if (sock->getState() == TCPSocket::SocketState::FIN_WAIT2) {
+                // if the retransmission queue is empty, 
+                // the user's CLOSE can be acknowledged ("ok") but do not delete the TCB.
+                if (sock->retransmissionQueue.empty()) {
+                    std::cout << "ok" << std::endl;
+                }
+            }
+
+            if (sock->getState() == TCPSocket::SocketState::CLOSING) {
+                // If the ACK acknowledges our FIN, enter the TIME-WAIT state; otherwise, ignore the segment
+                if (ack == sock->getSendNext()) { // #todo double check this logic
+                    sock->setState(TCPSocket::SocketState::TIME_WAIT);
+                }
+            }
+        }
 
         if (ackBitSet && sock->getState() == TCPSocket::SocketState::LAST_ACK) {
             // The only thing that can arrive in this state is an 
@@ -751,268 +589,53 @@ void TCPNode::handleClient(
             }
         }
 
-        // 6) Check URG bit
-        // N/A
-
-        // 7) Process segment text
-
-        if (sock->getState() == TCPSocket::SocketState::ESTABLISHED || 
-            sock->getState() == TCPSocket::SocketState::FIN_WAIT1   ||
-            sock->getState() == TCPSocket::SocketState::FIN_WAIT2   ||) {
-                // #todo handle early arrivals 
-
-                // For now, only add if sequence number matches exactly
-                // #todo handle case where seq number is less than expected
-                if (tcpHeader->th_seq == sock->recvBuffer.getNext() + sock->irs) {
-                    int numWritten = sock->recvBuffer.put(payload.size(), payload);
-                    // move next byte expected pointer forward
-                    sock->recvBuffer.setRecvBufNext(sock->getSendNext() + numWritten);
-
-                    // get new window size + update window size
-                    int newRecvWind = sock->recvBuffer.getWindowSize();
-                    sock->setRecvWnd(newRecvWind);
-
-                    // #todo loop through out of order queue to try and fill in
-
-                    // send ack
-                    // note, we don't have to worry about send window bc we are sending an empty payload
-                    auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
-                    sock->sendTCPPacket(tcpPacket);
-                    return;
-                }
-                // #todo, consider piggy backing
-            }
-        
-        if (sock->getState() == TCPSocket::SocketState::CLOSE_WAIT ||
-            sock->getState() == TCPSocket::SocketState::CLOSING    ||
-            sock->getState() == TCPSocket::SocketState::LAST_ACK   ||
-            sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
-                // this should not occur
-                std::cerr << "this should not have occured" << std::endl;
-            }
-        
-        // 8) Check FIN bit
-        bool finBitSet = tcpHeader->th_flags & TH_FIN;
-
-        if (finBitSet && (
-            sock->getState() == TCPSocket::SocketState::CLOSED || 
-            sock->getState() == TCPSocket::SocketState::LISTEN || 
-            sock->getState() == TCPSocket::SocketState::SYN_SENT)) {
-                // do not process because seg cannot be validated
-                // drop packet
-                return;
-            }
-        
-        if (finBitSet) {
-            // If the FIN bit is set, signal the user "connection closing" and 
-            // return any pending RECEIVEs with same message, 
-            // advance RCV.NXT over the FIN, and send an acknowledgment for the FIN. 
-            // Note that FIN implies PUSH for any segment text not yet delivered to the user.
-            std::cout << "connection closing" << std::endl;
-
-            // return pending receives?
-
-            // advance RCV.NXT over the FIN
-            // #todo, need a plus +1 here in case payload is empty?
-            sock->recvBuffer.setRecvBufNext(sock->getSendNext() + payload.size());
-
-            // send FIN ACK back
-            auto tcpPacket = sock->createTCPPacket(TH_ACK | TH_FIN, sock->getSeqNum(), sock->getAckNum(), "");
-            sock->sendTCPPacket(tcpPacket);
-
-            // change states
-            if (sock->getState() == TCPSocket::SocketState::SYN_RECV || sock->getState() == TCPSocket::SocketState::ESTABLISHED) {
-                sock->setState(TCPSocket::SocketState::CLOSE_WAIT);
-            }
-
-            if (sock->getState() == TCPSocket::SocketState::FIN_WAIT1) {
-                // If our FIN has been ACKed (perhaps in this segment), 
-                // then enter TIME-WAIT, start the time-wait timer, turn off the other timers; 
-                // otherwise, enter the CLOSING state.
-                if (ack == sock->getSendNext()) { // #todo double check this logic
-                    sock->setState(TCPSocket::SocketState::TIME_WAIT);
-                    // #todo start timer
-                } else {
-                    sock->setState(TCPSocket::SocketState::CLOSING);
-                }
-            }
-
-            if (sock->getState() == TCPSocket::SocketState::FIN_WAIT2) {
-                // Enter the TIME-WAIT state. Start the time-wait timer, turn off the other timers.
-                sock->setState(TCPSocket::SocketState::TIME_WAIT);
-                // #todo start timer
-            }
-
-            if (sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
-                // restart the 2 MSL timeout.
-                // #todo restart timer
-            }    
-            // If syn in window, it is an error
-            // send reset
-            auto tcpPacket = clientSock.createTCPPacket(TH_RST, clientSock.getSeqNum(), clientSock.getAckNum(), "");
-            clientSock.sendTCPPacket(tcpPacket);
-
-            // Send reset response to user by making read/send return 0
-
-            return;
-    }
-
-    // 5) Check ACK bit
-    bool ackBitSet = tcpHeader->th_flags & TH_ACK;
-    if (!ackBitSet) {
-        return;
-    }
-    tcp_seq ack = tcpHeader->th_ack;
-    
-    if (ackBitSet && clientSock.getState() == TCPSocket::SocketState::SYN_RECV) {
-        if (clientSock.getUnack < ack && ack <= clientSock.getSendNext()) { // #todo double check
-            clientSock.setState(TCPSocket::SocketState::ESTABLISHED);
-            clientSock.sndWnd = tcpHeader->th_win;
-
-            clientSock.seqNum = tcpHeader->th_ack;
-            clientSock.ackNum = tcpHeader->th_seq;
-            // continue processing in ESTABLISHED state
-        } else {
-            // send reset
-            clientSock.seqNum = tcpHeader->th_ack;
-            auto tcpPacket = clientSock.createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
-            clientSock.sendTCPPacket(tcpPacket);
-            return;
-        }
-    }
-
-    // ESTABLISHED, FIN_WAIT1, FIN_WAIT2, and CLOSE_WAIT states
-    // Note, the reason why there are ORs is because they all have to do at least the processing for 
-    // the established state.
-    if (ackBitSet && (
-        clientSock.getState() == TCPSocket::SocketState::ESTABLISHED || clientSock.getState() == TCPSocket::SocketState::FIN_WAIT1  ||
-        clientSock.getState() == TCPSocket::SocketState::FIN_WAIT2   || clientSock.getState() == TCPSocket::SocketState::CLOSE_WAIT ||
-        clientSock.getState() == TCPSocket::SocketState::CLOSING)) {
-
-            // Update unAck, if needed
-            if (clientSock.unAck < ack && ack <= clientSock.getSendNext()) { 
-                // If ACK follows within the window, then it is valid
-                // Update ack 
-                clientSock.unAck = ack;
-
-                // #todo handle retransmission queue: remove those that have been acked
-            } else if (ack > clientSock.getSendNext()) {
-                // This is reached if an ack has been received for something that hasn't even 
-                // been sent yet.
-                // Send an ack w/ old seq and ack nums
-                auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), clientSock.getAckNum(), "");
-                clientSock.sendTCPPacket(tcpPacket);
-                return;
-            }
-
-            // Update send window, if needed
-            if (clientSock.unAck <= ack && ack <= clientSock.getSendNext()) {
-                // If (SND.WL1 < SEG.SEQ or (SND.WL1 = SEG.SEQ and SND.WL2 =< SEG.ACK)), 
-                // set SND.WND <- SEG.WND, set SND.WL1 <- SEG.SEQ, and set SND.WL2 <- SEG.ACK.
-                if (clientSock.getSendWl1() < tcpHeader->th_seq || 
-                    // WL1 records the sequence number of the last segment used to update SND.WND, 
-                    // and that SND.WL2 records the acknowledgment number of the last segment used to update SND.WND. 
-                    // The check here prevents using old segments to update the window.
-                    (clientSock.getSendWl1() == tcpHeader->th_seq && clientSock.getSendWl2() <= tcpHeader->th_ack)) {
-                    clientSock.setSendWnd(tcpHeader->th_win);
-                    clientSock.setSendWl1(tcpHeader->th_seq);
-                    clientSock.setSendWl2(tcpHeader->th_ack);
-                    }
-            }
-                
-            // FIN-WAIT-1
-            if (clientSock.getState() == TCPSocket::SocketState::FIN_WAIT1) {
-                // If our FIN segment we previously sent was acknowledged, move to FIN_WAIT2
-                if (ack == clientSock.getSendNext()) { // #todo double check this logic
-                    clientSock.setState(TCPSocket::SocketState::FIN_WAIT2);
-                }
-            }
-
-            // FIN-WAIT-2
-            if (clientSock.getState() == TCPSocket::SocketState::FIN_WAIT2) {
-                // if the retransmission queue is empty, 
-                // the user's CLOSE can be acknowledged ("ok") but do not delete the TCB.
-                if (clientSock.retransmissionQueue.empty()) {
-                    std::cout << "ok" << std::endl;
-                }
-            }
-
-            if (clientSock.getState() == TCPSocket::SocketState::CLOSING) {
-                // If the ACK acknowledges our FIN, enter the TIME-WAIT state; otherwise, ignore the segment
-                if (ack == clientSock.getSendNext()) { // #todo double check this logic
-                    clientSock.setState(TCPSocket::SocketState::TIME_WAIT);
-                }
-            }
-        }
-
-    if (ackBitSet && clientSock.getState() == TCPSocket::SocketState::LAST_ACK) {
-        // The only thing that can arrive in this state is an 
-        // acknowledgment of our FIN. If our FIN is now acknowledged, 
-        // delete the TCB, enter the CLOSED state, and return.
-        if (ack == clientSock.getSendNext()) { // #todo double check this logic
-            clientSock.setState(TCPSocket::SocketState::CLOSED);
-            return;
-        }
-    }
-
-    if (ackBitSet && clientSock.getState() == TCPSocket::SocketState::TIME_WAIT) {
-        // The only thing that can arrive in this state is a 
-        // retransmission of the remote FIN. Acknowledge it, and restart the 2 MSL timeout.
-        if (tcpHeader.th_flags & TH_FIN) { // #todo check logic, do we need to check seq and ack too?
-            auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), clientSock.getAckNum(), "");
-            clientSock.sendTCPPacket(tcpPacket);
-            // #todo restart 2 MSL timeout
-            return;
-        }
-    }
-
     // 6) Check URG bit
     // N/A
 
     // 7) Process segment text
 
-    if (clientSock.getState() == TCPSocket::SocketState::ESTABLISHED || 
-        clientSock.getState() == TCPSocket::SocketState::FIN_WAIT1   ||
-        clientSock.getState() == TCPSocket::SocketState::FIN_WAIT2   ||) {
+    if (sock->getState() == TCPSocket::SocketState::ESTABLISHED || 
+        sock->getState() == TCPSocket::SocketState::FIN_WAIT1   ||
+        sock->getState() == TCPSocket::SocketState::FIN_WAIT2   ||) {
             // #todo handle early arrivals 
 
             // For now, only add if sequence number matches exactly
             // #todo handle case where seq number is less than expected
-            if (tcpHeader->th_seq == clientSock.recvBuffer.getNext() + clientSock.irs) {
-                int numWritten = clientSock.recvBuffer.put(payload.size(), payload);
+            if (tcpHeader->th_seq == sock->recvBuffer.getNext() + sock->irs) {
+                int numWritten = sock->recvBuffer.put(payload.size(), payload);
                 // move next byte expected pointer forward
-                clientSock.recvBuffer.incrementNext(numWritten);
+                sock->recvBuffer.setRecvBufNext(sock->getSendNext() + numWritten);
 
                 // get new window size + update window size
-                int newRecvWind = clientSock.recvBuffer.getWindowSize();
-                clientSock.setRecvWnd(newRecvWind);
+                int newRecvWind = sock->recvBuffer.getWindowSize();
+                sock->setRecvWnd(newRecvWind);
 
                 // #todo loop through out of order queue to try and fill in
 
                 // send ack
                 // note, we don't have to worry about send window bc we are sending an empty payload
-                auto tcpPacket = clientSock.createTCPPacket(TH_ACK, clientSock.getSeqNum(), clientSock.getAckNum(), "");
-                clientSock.sendTCPPacket(tcpPacket);
+                auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSeqNum(), sock->getAckNum(), "");
+                sock->sendTCPPacket(tcpPacket);
                 return;
             }
             // #todo, consider piggy backing
         }
     
-    if (clientSock.getState() == TCPSocket::SocketState::CLOSE_WAIT ||
-        clientSock.getState() == TCPSocket::SocketState::CLOSING    ||
-        clientSock.getState() == TCPSocket::SocketState::LAST_ACK   ||
-        clientSock.getState() == TCPSocket::SocketState::TIME_WAIT) {
+    if (sock->getState() == TCPSocket::SocketState::CLOSE_WAIT ||
+        sock->getState() == TCPSocket::SocketState::CLOSING    ||
+        sock->getState() == TCPSocket::SocketState::LAST_ACK   ||
+        sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
             // this should not occur
             std::cerr << "this should not have occured" << std::endl;
         }
-    
+        
     // 8) Check FIN bit
     bool finBitSet = tcpHeader->th_flags & TH_FIN;
 
     if (finBitSet && (
-        clientSock.getState() == TCPSocket::SocketState::CLOSED || 
-        clientSock.getState() == TCPSocket::SocketState::LISTEN || 
-        clientSock.getState() == TCPSocket::SocketState::SYN_SENT)) {
+        sock->getState() == TCPSocket::SocketState::CLOSED || 
+        sock->getState() == TCPSocket::SocketState::LISTEN || 
+        sock->getState() == TCPSocket::SocketState::SYN_SENT)) {
             // do not process because seg cannot be validated
             // drop packet
             return;
@@ -1029,43 +652,53 @@ void TCPNode::handleClient(
 
         // advance RCV.NXT over the FIN
         // #todo, need a plus +1 here in case payload is empty?
-        clientSock.recvBuffer.incrementNext(payload.size());
+        sock->recvBuffer.setRecvBufNext(sock->getSendNext() + payload.size());
 
         // send FIN ACK back
-        auto tcpPacket = clientSock.createTCPPacket(TH_ACK | TH_FIN, clientSock.getSeqNum(), clientSock.getAckNum(), "");
-        clientSock.sendTCPPacket(tcpPacket);
+        auto tcpPacket = sock->createTCPPacket(TH_ACK | TH_FIN, sock->getSeqNum(), sock->getAckNum(), "");
+        sock->sendTCPPacket(tcpPacket);
 
         // change states
-        if (clientSock.getState() == TCPSocket::SocketState::SYN_RECV || clientSock.getState() == TCPSocket::SocketState::ESTABLISHED) {
-            clientSock.setState(TCPSocket::SocketState::CLOSE_WAIT);
+        if (sock->getState() == TCPSocket::SocketState::SYN_RECV || sock->getState() == TCPSocket::SocketState::ESTABLISHED) {
+            sock->setState(TCPSocket::SocketState::CLOSE_WAIT);
         }
 
-        if (clientSock.getState() == TCPSocket::SocketState::FIN_WAIT1) {
+        if (sock->getState() == TCPSocket::SocketState::FIN_WAIT1) {
             // If our FIN has been ACKed (perhaps in this segment), 
             // then enter TIME-WAIT, start the time-wait timer, turn off the other timers; 
             // otherwise, enter the CLOSING state.
-            if (ack == clientSock.getSendNext()) { // #todo double check this logic
-                clientSock.setState(TCPSocket::SocketState::TIME_WAIT);
+            if (ack == sock->getSendNext()) { // #todo double check this logic
+                sock->setState(TCPSocket::SocketState::TIME_WAIT);
                 // #todo start timer
             } else {
-                clientSock.setState(TCPSocket::SocketState::CLOSING);
+                sock->setState(TCPSocket::SocketState::CLOSING);
             }
         }
 
-        if (clientSock.getState() == TCPSocket::SocketState::FIN_WAIT2) {
+        if (sock->getState() == TCPSocket::SocketState::FIN_WAIT2) {
             // Enter the TIME-WAIT state. Start the time-wait timer, turn off the other timers.
-            clientSock.setState(TCPSocket::SocketState::TIME_WAIT);
+            sock->setState(TCPSocket::SocketState::TIME_WAIT);
             // #todo start timer
         }
 
-        if (clientSock.getState() == TCPSocket::SocketState::TIME_WAIT) {
+        if (sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
             // restart the 2 MSL timeout.
             // #todo restart timer
         }    
+        // If syn in window, it is an error
+        // send reset
+        auto tcpPacket = sock->createTCPPacket(TH_RST, sock->getSeqNum(), sock->getAckNum(), "");
+        sock->sendTCPPacket(tcpPacket);
+
+        // Send reset response to user by making read/send return 0
+
         return;
     }
-    
 }
+    
+
+   
+
 
 // Handles messages received when socket does not exist
 void transitionFromClosed(std::shared_ptr<TCPSocket> tempSock, std::shared_ptr<struct tcphdr> tcpHeader) {
