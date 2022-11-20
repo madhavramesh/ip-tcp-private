@@ -32,7 +32,7 @@ void TCPCircularBuffer::initializeWith(int n) {
     last = n;
 }
 
-int write(int numBytes, std::string& buf) {
+int TCPCircularBuffer::write(int numBytes, std::string& buf) {
     int pos = 0;
     while (last != start && pos < numBytes) {
         last++;
@@ -42,7 +42,7 @@ int write(int numBytes, std::string& buf) {
     return pos;
 }
 
-int read(int numBytes, std::string& buf) {
+int TCPCircularBuffer::read(int numBytes, std::string& buf) {
     int insertPos = 0;
     while (start != next && insertPos < numBytes) {
         buf[insertPos] = data[start % data.capacity()];
@@ -52,7 +52,7 @@ int read(int numBytes, std::string& buf) {
     return insertPos;
 }
 
-int put(int numBytes, std::string& buf) {
+int TCPCircularBuffer::put(int numBytes, std::string& buf) {
     int pos = 0;
     while (last - start < data.capacity()) {
         data[next % data.capacity()] = buf[pos];
@@ -61,7 +61,7 @@ int put(int numBytes, std::string& buf) {
     return pos;
 }
 
-int getNumBytes(int numBytes, std::string& buf) {
+int TCPCircularBuffer::getNumBytes(int numBytes, std::string& buf) {
     int tempNext = start;
     int pos = 0;
     while (tempNext != (last + 1) && pos < numBytes) {
@@ -73,7 +73,7 @@ int getNumBytes(int numBytes, std::string& buf) {
     return pos;
 }
 
-int getWindowSize() {
+int TCPCircularBuffer::getWindowSize() {
     int afterLast = last + 1;
     if (start == afterLast) {
         return data.capacity();
@@ -84,6 +84,6 @@ int getWindowSize() {
     }
 }
 
-int getCapacity() {
+int TCPCircularBuffer::getCapacity() {
     return data.capacity();
 }

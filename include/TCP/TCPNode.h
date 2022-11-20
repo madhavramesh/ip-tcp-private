@@ -15,11 +15,10 @@
 #include <include/IP/IPNode.h>
 
 class IPNode;
+class TCPSocket;
 
 const uint16_t MIN_PORT = 1024;
 const uint16_t MAX_PORT = 65535;
-
-const std::string NULL_IPADDR = "0.0.0.0";
 
 class TCPNode {
     public:
@@ -106,7 +105,7 @@ class TCPNode {
         
         // Gets the TCP socket corresponding to a tuple (srcAddr, srcPort, destAddr, destPort)
         std::shared_ptr<TCPSocket> getSocket(const TCPTuple& socketTuple);
-        void deleteSocket(TCPTuple& socketTuple);
+        void deleteSocket(TCPTuple socketTuple);
 
         TCPTuple extractTCPTuple(
             std::shared_ptr<struct ip> ipHeader,
@@ -151,9 +150,9 @@ class TCPNode {
             std::string& payload
         );
 
-        bool segmentIsAcceptable(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeader);
+        bool segmentIsAcceptable(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload);
 
-        void trimPayload(std::shared_ptr<struct tcphdr> tcpHeder, std::string& payload);
+        void trimPayload(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeder, std::string& payload);
 
         // Allocates a random ephemeral port
         uint16_t allocatePort(std::string& srcAddr, std::string& destAddr, uint16_t destPort);

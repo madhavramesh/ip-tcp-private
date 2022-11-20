@@ -108,14 +108,14 @@ class TCPSocket {
         int read(int numBytes, std::string& buf);
         int write(int numBytes, std::string& payload);
 
-        void sendTCPPacket(std::unique_ptr<struct TCPPacket>& tcpPacket);
+        void sendTCPPacket(std::shared_ptr<struct TCPPacket>& tcpPacket);
         void receiveTCPPacket(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader,
             std::string& payload
         );
 
-        std::unique_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
+        std::shared_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
         uint32_t ackNum, std::string payload);
 
         void retransmitPackets();
@@ -147,7 +147,7 @@ class TCPSocket {
             std::string payload;
         };
         // TCP Packets that were received out of order
-        std::deque<std::unique_ptr<TCPPacket>> outOfOrderQueue;
+        std::deque<std::shared_ptr<TCPPacket>> outOfOrderQueue;
 
         // TODO: Potentially include both R1 and R2 timeouts
         // TODO: Dynamically calculate RTO
@@ -161,7 +161,7 @@ class TCPSocket {
         std::atomic<bool> retransmissionActive;
 
         // TCP Packets to retransmit. Removed from queue once ACKed
-        std::deque<std::unique_ptr<TCPPacket>> retransmissionQueue;
+        std::deque<std::shared_ptr<TCPPacket>> retransmissionQueue;
         TCPCircularBuffer recvBuffer;
 
         // NOTE: Only used by listen sockets

@@ -42,7 +42,7 @@ std::shared_ptr<TCPSocket> TCPNode::getSocket(const TCPTuple& socketTuple) {
     return nullptr;
 }
 
-void TCPNode::deleteSocket(TCPTuple& socketTuple) {
+void TCPNode::deleteSocket(TCPTuple socketTuple) {
     int socketId = socket_tuple_table[socketTuple];
     sd_table.erase(socketId);
     socket_tuple_table.erase(socketTuple);
@@ -140,7 +140,7 @@ int TCPNode::connect(std::string& address, uint16_t port) {
     socket_tuple_table.insert(std::make_pair(sock->toTuple(), socketId));
 
     // TODO: SHOULD I BE LOCKING sd_table HERE?
-    sock->socket_connect();
+    sock->socket_connect(ipNode);
     return socketId;
 }
 
@@ -164,11 +164,11 @@ int TCPNode::write(int socket, std::vector<char>& buf) {
             return -1;
         case TCPSocket::SocketState::SYN_SENT: 
         case TCPSocket::SocketState::SYN_RECV:
-            sock->addToWaitQueue(tcpPacket); // #todo 
-            return buf.size();
+            // sock->addToWaitQueue(tcpPacket); // #todo 
+            return -1;
         case TCPSocket::SocketState::ESTABLISHED:
         case TCPSocket::SocketState::CLOSE_WAIT:
-            sock->sendTCPPacket(tcpPacket);
+            sock->sendTCPPacket(tcpPacket, ipNode);
             return buf.size();
         case TCPSocket::SocketState::FIN_WAIT1:
         case TCPSocket::SocketState::FIN_WAIT2:
@@ -263,7 +263,7 @@ void TCPNode::close(int socket) {
 void TCPNode::retransmitPackets() {
     while (true) {
         for (auto& [_, sock] : sd_table) {
-            sock->retransmitPackets();
+            sock->retransmitPackets(ipNode);
         }
     }
 }
@@ -279,7 +279,7 @@ TCPTuple TCPNode::extractTCPTuple(std::shared_ptr<struct ip> ipHeader,
     return TCPTuple(localAddr, localPort, remoteAddr, remotePort);
 }
 
-uint32_t calculateSegmentEnd(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
+uint32_t TCPNode::calculateSegmentEnd(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
     int additionalByte = tcpHeader->th_flags & (TH_SYN | TH_FIN);
     return tcpHeader->th_seq + payload.size() + additionalByte;
 }
@@ -362,12 +362,12 @@ void TCPNode::handleClient(
 
         // Send ACK
         auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
-        sock->sendTCPPacket(tcpPacket);
+        sock->sendTCPPacket(tcpPacket, ipNode) ;
         return;
     }
     
     // Trim payload
-    trimPayload(tcpHeader, payload);
+    trimPayload(sock, tcpHeader, payload);
     
     // 2) Check the reset bit
     bool resetBitSet = tcpHeader->th_flags & TH_RST;
@@ -377,7 +377,7 @@ void TCPNode::handleClient(
         deleteSocket(sock->toTuple());
 
         // Flush retransmissionQueue
-        sock->flushRetransmission();
+        sock->flushRetransmission(ipNode);
 
         // If initiated with passive open, convert to listener socket if one doesn't exist
         if (!sock->isActiveOpen()) {
@@ -400,7 +400,7 @@ void TCPNode::handleClient(
 
         std::cerr << red << "connection reset" << color_reset << std::endl;
         // Flush retransmissionQueue and delete TCB
-        sock->flushRetransmission();
+        sock->flushRetransmission(ipNode);
         deleteSocket(sock->toTuple());
         return;
     } else if (resetBitSet && (
@@ -439,14 +439,14 @@ void TCPNode::handleClient(
         sock->getState() == TCPSocket::SocketState::LAST_ACK ||
         sock->getState() == TCPSocket::SocketState::TIME_WAIT)) {
             // RFC 793: send reset response
-            auto tcpPacket = sock->createTCPPacket(TH_RST, sock->getSeqNext(), sock->getRecvNext(), "");
-            sock->sendTCPPacket(tcpPacket);
+            auto tcpPacket = sock->createTCPPacket(TH_RST, sock->getSendNext(), sock->getRecvNext(), "");
+            sock->sendTCPPacket(tcpPacket, ipNode) ;
 
             // #TODO: send reset responses to outstanding receives and sends
 
             std::cerr << red << "connection reset" << color_reset << std::endl;
             // Flush segment queues and delete TCB
-            sock->flushRetransmission();
+            sock->flushRetransmission(ipNode);
             deleteSocket(sock->toTuple());
             return;
     }
@@ -462,14 +462,13 @@ void TCPNode::handleClient(
         if (sock->getUnack() < ack && ack <= sock->getSendNext()) { // #todo double check
             sock->setState(TCPSocket::SocketState::ESTABLISHED);
             sock->setSendWnd(tcpHeader->th_win);
-
-            sock->setSeqNum(tcpHeader->th_ack);
-            sock->setAckNum(tcpHeader->th_seq);
+            sock->setSendWl1(tcpHeader->th_ack);
+            sock->setSendWl2(tcpHeader->th_seq);
             // continue processing in ESTABLISHED state
         } else {
             // send reset
             auto tcpPacket = sock->createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
-            sock->sendTCPPacket(tcpPacket);
+            sock->sendTCPPacket(tcpPacket, ipNode) ;
             return;
         }
     }
@@ -494,7 +493,7 @@ void TCPNode::handleClient(
                 // been sent yet.
                 // Send an ack w/ old seq and ack nums
                 auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
-                sock->sendTCPPacket(tcpPacket);
+                sock->sendTCPPacket(tcpPacket, ipNode);
                 return;
             }
 
@@ -553,7 +552,7 @@ void TCPNode::handleClient(
             // retransmission of the remote FIN. Acknowledge it, and restart the 2 MSL timeout.
             if (tcpHeader->th_flags & TH_FIN) { // #todo check logic, do we need to check seq and ack too?
                 auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
-                sock->sendTCPPacket(tcpPacket);
+                sock->sendTCPPacket(tcpPacket, ipNode);
                 // #todo restart 2 MSL timeout
                 return;
             }
@@ -586,7 +585,7 @@ void TCPNode::handleClient(
                 // send ack
                 // note, we don't have to worry about send window bc we are sending an empty payload
                 auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
-                sock->sendTCPPacket(tcpPacket);
+                sock->sendTCPPacket(tcpPacket, ipNode);
                 return;
             }
             // #todo, consider piggy backing
@@ -627,7 +626,7 @@ void TCPNode::handleClient(
 
         // send FIN ACK back
         auto tcpPacket = sock->createTCPPacket(TH_ACK | TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
-        sock->sendTCPPacket(tcpPacket);
+        sock->sendTCPPacket(tcpPacket, ipNode);
 
         // change states
         if (sock->getState() == TCPSocket::SocketState::SYN_RECV || sock->getState() == TCPSocket::SocketState::ESTABLISHED) {
@@ -670,11 +669,11 @@ void TCPNode::transitionFromClosed(std::shared_ptr<TCPSocket> tempSock, std::sha
         if (tcpHeader->th_flags & TH_ACK) {
             // Ack bit on
             auto tcpPacket = tempSock->createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
-            tempSock->sendTCPPacket(tcpPacket);
+            tempSock->sendTCPPacket(tcpPacket, ipNode);
         } else {
             // Ack bit off
             auto tcpPacket = tempSock->createTCPPacket(TH_RST, 0, segEnd, "");
-            tempSock->sendTCPPacket(tcpPacket);
+            tempSock->sendTCPPacket(tcpPacket, ipNode);
         }
     } 
 }
@@ -690,7 +689,7 @@ void TCPNode::transitionFromListen(std::shared_ptr<TCPSocket> sock, std::shared_
     // Check for ACK
     if (tcpHeader->th_flags & TH_ACK) {
         auto tcpPacket = tempSock->createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
-        tempSock->sendTCPPacket(tcpPacket);
+        tempSock->sendTCPPacket(tcpPacket, ipNode);
         return;
     }
 
@@ -700,7 +699,7 @@ void TCPNode::transitionFromListen(std::shared_ptr<TCPSocket> sock, std::shared_
                 socketTuple.getSrcAddr(), socketTuple.getSrcPort(), 
                 socketTuple.getDestAddr(), socketTuple.getDestPort());
 
-        sock->addIncompleteConnection(newSock);
+        sock->addIncompleteConnection(tcpHeader, newSock);
 
         // Add to socket descriptor table
         int socketId = nextSockId++;
@@ -710,7 +709,7 @@ void TCPNode::transitionFromListen(std::shared_ptr<TCPSocket> sock, std::shared_
         // Send SYN + ACK
         auto tcpPacket = newSock->createTCPPacket(TH_SYN | TH_ACK, sock->getSendNext(), 
                                                   sock->getRecvNext(), "");
-        newSock->sendTCPPacket(tcpPacket);
+        newSock->sendTCPPacket(tcpPacket, ipNode);
 
     // important, function should not return here!
     // that way, any payload can be processed in the syn-received state
@@ -734,7 +733,7 @@ void TCPNode::transitionFromSynSent(std::shared_ptr<TCPSocket> sock,
         if (tcpHeader->th_ack <= sock->getIss() || tcpHeader->th_ack > sock->getSendNext()) {
             if (!(tcpHeader->th_flags & TH_RST)) {
                 auto tcpPacket = sock->createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
-                sock->sendTCPPacket(tcpPacket);
+                sock->sendTCPPacket(tcpPacket, ipNode);
             }
             return;
         }
@@ -781,7 +780,7 @@ void TCPNode::transitionFromSynSent(std::shared_ptr<TCPSocket> sock,
         if (sock->getUnack() > sock->getIss()) {
             sock->setState(TCPSocket::SocketState::ESTABLISHED);
             auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
-            sock->sendTCPPacket(tcpPacket);
+            sock->sendTCPPacket(tcpPacket, ipNode);
             // #todo make sure you're not supposed to return here
         } else {
             // Otherwise, enter SYN-RECEIVED (simultaneous open) and form a SYN+ACK segment
@@ -789,7 +788,7 @@ void TCPNode::transitionFromSynSent(std::shared_ptr<TCPSocket> sock,
             // and send it
             auto tcpPacket = sock->createTCPPacket(TH_SYN | TH_ACK, sock->getIss(), 
                                                    sock->getRecvNext(), "");   
-            sock->sendTCPPacket(tcpPacket);
+            sock->sendTCPPacket(tcpPacket, ipNode);
 
             // Set variables
             sock->setSendWnd(tcpHeader->th_win);
@@ -813,7 +812,7 @@ bool TCPNode::segmentIsAcceptable(std::shared_ptr<TCPSocket> sock,
     // Segment length = 0, receive window = 0, SEG.SEQ = RCV.NXT
     if ((payload.size() == 0) && (tcpHeader->th_win == 0)) {
         if (!(segSeq == recvNext)) {
-            return false
+            return false;
         }
     }
     // Segment length = 0, receive window > 0, RCV.NXT <= SEG.SEQ < RCV.NXT + RCV.WND
@@ -837,7 +836,7 @@ bool TCPNode::segmentIsAcceptable(std::shared_ptr<TCPSocket> sock,
     return true;
 }
 
-void TCPNode::trimPayload(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
+void TCPNode::trimPayload(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
     uint32_t segSeq   = tcpHeader->th_seq;
     uint32_t segEnd   = calculateSegmentEnd(tcpHeader, payload);
     uint32_t recvNext = sock->getRecvNext();
@@ -907,7 +906,7 @@ void TCPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& paylo
 
     uint16_t srcIP = ipHeader->ip_src.s_addr;
     uint16_t destIP = ipHeader->ip_dst.s_addr;
-    if (TCPSocket::calculateTCPchecksum(srcIP, destIP, tcpHeader, remainingPayload) != 
+    if (TCPSocket::computeTCPChecksum(srcIP, destIP, tcpHeader, remainingPayload) != 
         prevCheckSum) {
         return;
     }

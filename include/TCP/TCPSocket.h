@@ -22,6 +22,10 @@
 
 #include <include/TCP/TCPSocket.h>
 #include <include/TCP/CircularBuffer.h>
+#include <include/TCP/TCPTuple.h>
+#include <include/IP/IPNode.h>
+
+class IPNode;
 
 const uint16_t RECV_WINDOW_SIZE = 65535;
 
@@ -92,8 +96,6 @@ class TCPSocket {
         void setSendWnd(uint16_t newSendWnd);
         void setSendWl1(uint32_t newSendWl1);
         void setSendWl2(uint32_t newSendWl2);
-        void setAckNum(uint32_t newAckNum);
-        void setSeqNum(uint32_t newSeqNum);
         void setIrs(uint32_t newIrs);
         void setRecvBufNext(uint32_t newRecvBufNext);
         
@@ -101,7 +103,7 @@ class TCPSocket {
         uint32_t getUnack();
         uint32_t getRecvNext();
         uint32_t getRecvWnd();
-        uint16_t getSendNext();
+        uint32_t getSendNext();
         uint32_t getIss();
         uint32_t getIrs();
         uint16_t getSendWnd();
@@ -114,31 +116,31 @@ class TCPSocket {
 
         void socket_listen();
         std::shared_ptr<TCPSocket> socket_accept();
-        void socket_connect();
+        void socket_connect(std::shared_ptr<IPNode> ipNode);
 
-        void addIncompleteConnection(std::shared_ptr<TCPSocket> newSock);
+        void addIncompleteConnection(std::shared_ptr<struct tcphdr> tcpHeader, std::shared_ptr<TCPSocket> newSock);
 
         int readRecvBuf(int numBytes, std::string& buf);
         int putRecvBuf(int numBytes, std::string& payload);
 
-        void sendTCPPacket(std::unique_ptr<struct TCPPacket>& tcpPacket);
+        void sendTCPPacket(std::shared_ptr<TCPPacket>& tcpPacket, std::shared_ptr<IPNode>& ipNode);
         void receiveTCPPacket(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader,
             std::string& payload
         );
 
-        std::unique_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
+        std::shared_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
         uint32_t ackNum, std::string payload);
 
-        void retransmitPackets();
+        void retransmitPackets(std::shared_ptr<IPNode> ipNode);
+        void flushRetransmission(std::shared_ptr<IPNode> ipNode);
 
         static uint16_t computeTCPChecksum(
             uint32_t virtual_ip_src,
             uint32_t virtual_ip_dst,
             std::shared_ptr<struct tcphdr> tcp_header,
-            std::string& payload
-        );
+            std::string& payload);
 
     private:
         bool activeOpen { false };
@@ -156,7 +158,7 @@ class TCPSocket {
         uint32_t sendNext { 0 };
 
         // TCP Packets that were received out of order
-        std::deque<std::unique_ptr<TCPPacket>> outOfOrderQueue;
+        std::deque<std::shared_ptr<TCPPacket>> outOfOrderQueue;
 
         // TODO: Potentially include both R1 and R2 timeouts
         // TODO: Dynamically calculate RTO
@@ -170,7 +172,7 @@ class TCPSocket {
         std::atomic<bool> retransmissionActive;
 
         // TCP Packets to retransmit. Removed from queue once ACKed
-        std::deque<std::unique_ptr<TCPPacket>> retransmissionQueue;
+        std::deque<std::shared_ptr<TCPPacket>> retransmissionQueue;
         TCPCircularBuffer recvBuffer;
 
         // NOTE: Only used by listen sockets
@@ -183,13 +185,11 @@ class TCPSocket {
         // SYN-RECEIVED state
         std::unordered_map<TCPTuple, std::shared_ptr<TCPSocket>> incompleteConns;  
 
-        void flushRetransmission();
-
-        unsigned int generateISN(
-            std::string& srcAddr,
-            unsigned int srcPort,
-            std::string& destAddr,
-            unsigned int destPort
+        uint32_t generateISN(
+            std::string srcAddr,
+            uint16_t srcPort,
+            std::string destAddr,
+            uint16_t destPort
         );
 
         struct siphash_key generateSecretKey();
