@@ -252,8 +252,7 @@ void TCPCommands::recv(std::string& args) {
         }
     }
 
-    std::string buf;
-    buf.resize(bytesToRead);
+    std::string buf(bytesToRead, '\0');
     int bytesRead = tcpNode->read(socketId, buf, blocking);
 
     std::cout << "read on " << buf.size() << "bytes returned " << bytesRead 

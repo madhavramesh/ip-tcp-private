@@ -20,8 +20,10 @@
 
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
+
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
+
 #include <include/tools/hash.h>
 
 using namespace boost::asio;

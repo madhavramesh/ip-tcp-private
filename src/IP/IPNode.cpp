@@ -259,8 +259,7 @@ void IPNode::sendRIPpacket(std::string destAddr, struct RIPpacket packet) {
     int front_size = sizeof(packet.command) + sizeof(packet.num_entries);
     int total_size = front_size + (packet.entries.size() * sizeof(RIPentry));
 
-    std::string payload;
-    payload.resize(total_size);
+    std::string payload(total_size, '\0');
 
     // copy front
     memcpy((char *)payload.data(), &packet.command, sizeof(packet.command)); 

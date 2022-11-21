@@ -34,6 +34,8 @@ void TCPCircularBuffer::initializeWith(int n) {
 
 // Read only from start
 int TCPCircularBuffer::read(int numBytes, std::string& buf) {
+    buf.resize(numBytes);
+
     int insertPos = 0;
     while (start != next && insertPos < numBytes) {
         buf[insertPos] = data[start % data.capacity()];
@@ -43,12 +45,12 @@ int TCPCircularBuffer::read(int numBytes, std::string& buf) {
     return insertPos;
 }
 
-// Write to any position (allows us to receive packets out of order)
-int TCPCircularBuffer::write(int numBytes, std::string& buf, uint32_t pos) {
+// Write numBytes starting from next position
+int write(int numBytes, std::string& buf) {
     int numWritten = 0;
-    while (numWritten < data.capacity() && numWritten < numBytes) {
-        data[pos % data.capacity()] = buf[numWritten];
-        pos++;
+    while (next != last && numWritten < numBytes) {
+        data[next % data.capacity()] = buf[numWritten];
+        next++;
         numWritten++;
     }
     return numWritten;
