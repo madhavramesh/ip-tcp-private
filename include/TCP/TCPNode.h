@@ -20,13 +20,21 @@
 class IPNode;
 class TCPSocket;
 
+
 const uint16_t MIN_PORT = 1024;
 const uint16_t MAX_PORT = 65535;
 
-const int MAX_TRANSMIT_UNIT = 1500 - sizeof(struct ip) - sizeof(struct tcphdr);
+const int MAX_TRANSMIT_UNIT = 1400 - sizeof(struct ip) - sizeof(struct tcphdr);
+
+struct SockInfo {
+    int id;
+    TCPTuple tuple;
+    std::string state;
+};
 
 class TCPNode {
     public:
+
         std::shared_ptr<IPNode> ipNode;
         
         // Initializes new IPNode
@@ -88,7 +96,7 @@ class TCPNode {
         void close(int socket);
 
         // Returns all sockets in socket descriptor table
-        std::unordered_map<int, TCPSocket> getSockets();
+        std::vector<SockInfo> getSockets();
 
         // Used to start a separate thread to retransmit packets
         void retransmitPackets();
@@ -173,6 +181,7 @@ class TCPNode {
         );
 
         void transitionFromOtherACKBit(
+            std::shared_ptr<struct ip> ipHeader,
             std::shared_ptr<struct tcphdr> tcpHeader, 
             std::string& payload, 
             std::shared_ptr<TCPSocket> sock

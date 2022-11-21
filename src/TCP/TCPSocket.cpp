@@ -10,14 +10,14 @@
 TCPSocket::TCPSocket(std::string localAddr, uint16_t localPort, std::string remoteAddr, 
     uint16_t remotePort, std::shared_ptr<IPNode> ipNode) : 
    socketTuple(localAddr, localPort, remoteAddr, remotePort), 
-   ipNode(node),
+   ipNode(ipNode),
    recvBuffer(RECV_WINDOW_SIZE),
    retransmissionActive(false),
    lastRetransmitTime(std::chrono::steady_clock::now()) {}
 
 TCPSocket::TCPSocket(const TCPTuple& otherTuple, std::shared_ptr<IPNode> ipNode) : 
     socketTuple(otherTuple),
-    ipNode(node),
+    ipNode(ipNode),
     recvBuffer(RECV_WINDOW_SIZE),
     retransmissionActive(false),
     lastRetransmitTime(std::chrono::steady_clock::now()) {}
@@ -38,10 +38,10 @@ TCPSocket::SocketState TCPSocket::getState() {
 void TCPSocket::setState(SocketState newState) {
     if (newState == SocketState::CLOSED) {
         if (state == SocketState::SYN_SENT) {
-            originator.incompleteConns.erase(toTuple());
+            originator->incompleteConns.erase(toTuple());
         } else if (state == SocketState::ESTABLISHED) {
-            for (auto it = originator.completeConns.begin(); 
-                    it != originator.completeConns.end(); it++) {
+            for (auto it = originator->completeConns.begin(); 
+                    it != originator->completeConns.end(); it++) {
                 if ((*it)->toTuple() == toTuple()) {
                     completeConns.erase(it);
                     break;
@@ -169,7 +169,7 @@ std::shared_ptr<TCPSocket> TCPSocket::socket_accept() {
     completeConns.pop_front();
 
     // accepted socket now has no originator
-    accceptedSock.originator = nullptr;
+    acceptedSock->originator = nullptr;
 
     lk.unlock();
     return acceptedSock;
@@ -224,9 +224,9 @@ void TCPSocket::socket_connect() {
 std::shared_ptr<TCPSocket> TCPSocket::addIncompleteConnection(std::shared_ptr<struct tcphdr> tcpHeader, 
         TCPTuple& socketTuple) {
     // Set up new client socket
-    std::shared_ptr<tcpsocket> newsock = std::make_shared<tcpsocket>(
-            sockettuple.getsrcaddr(), sockettuple.getsrcport(), sockettuple.getdestaddr(), 
-            sockettuple.getdestport(), ipnode);
+    std::shared_ptr<TCPSocket> newSock = std::make_shared<TCPSocket>(
+            socketTuple.getSrcAddr(), socketTuple.getSrcPort(), socketTuple.getDestAddr(), 
+            socketTuple.getDestPort(), ipNode);
 
     newSock->originator = shared_from_this();
 
@@ -247,10 +247,12 @@ std::shared_ptr<TCPSocket> TCPSocket::addIncompleteConnection(std::shared_ptr<st
 
     // Add socket to corresponding listening socket's incomplete connections
     incompleteConns.insert(std::make_pair(newSock->toTuple(), newSock));
+
+    return newSock;
 }
 
 void TCPSocket::moveToCompleteConnection(std::shared_ptr<TCPSocket> sock) {
-    TCPTuple& socketTuple = sock->toTuple();
+    TCPTuple socketTuple = sock->toTuple();
     if (!incompleteConns.count(socketTuple)) {
         return;
     }
@@ -346,7 +348,7 @@ void TCPSocket::retransmitPackets() {
     }
 
     auto curTime = std::chrono::steady_clock::now();
-    auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(curTime - lastRetransmitTime).count();
+    auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(curTime - lastRetransmitTime);
     if (timeDiff < retransmitInterval) {
         return;
     }

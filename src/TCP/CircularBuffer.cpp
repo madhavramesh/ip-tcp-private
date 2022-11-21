@@ -44,9 +44,9 @@ int TCPCircularBuffer::read(int numBytes, std::string& buf) {
 }
 
 // Write to any position (allows us to receive packets out of order)
-int write(int numBytes, std::string& buf, uint32_t pos) {
+int TCPCircularBuffer::write(int numBytes, std::string& buf, uint32_t pos) {
     int numWritten = 0;
-    while (numWritten < data.capacity() && numWriten < numBytes) {
+    while (numWritten < data.capacity() && numWritten < numBytes) {
         data[pos % data.capacity()] = buf[numWritten];
         pos++;
         numWritten++;

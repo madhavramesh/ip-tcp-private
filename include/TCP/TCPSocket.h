@@ -38,6 +38,7 @@ const std::string NULL_IPADDR = "0.0.0.0";
 
 class IPNode; // forward declaration 
 
+
 class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
     public:
 
@@ -85,7 +86,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
                 default:
                     return "NONE";
             }
-        }
+        };
 
         TCPSocket(
             std::string localAddr, 
@@ -114,7 +115,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         uint32_t getUnack();
         uint32_t getRecvNext();
         uint32_t getRecvWnd();
-        uint16_t getSendNext();
+        uint32_t getSendNext();
         uint32_t getIss();
         uint32_t getIrs();
         uint16_t getSendWnd();
@@ -130,20 +131,20 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         std::shared_ptr<TCPSocket> socket_accept();
         void socket_connect();
 
-        void addIncompleteConnection(std::shared_ptr<TCPSocket> newSock);
+        std::shared_ptr<TCPSocket> addIncompleteConnection(std::shared_ptr<struct tcphdr> tcpHeader, TCPTuple& socketTuple);
         void moveToCompleteConnection(std::shared_ptr<TCPSocket> newSock);
 
         int readRecvBuf(int numBytes, std::string& buf);
         int writeRecvBuf(int numBytes, std::string& payload, uint32_t pos);
 
-        void sendTCPPacket(std::unique_ptr<struct TCPPacket>& tcpPacket);
+        void sendTCPPacket(std::shared_ptr<struct TCPPacket>& tcpPacket);
         void receiveTCPPacket(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader,
             std::string& payload
         );
 
-        std::unique_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
+        std::shared_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
         uint32_t ackNum, std::string payload);
 
         void retransmitPackets();
@@ -178,7 +179,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         uint32_t sendNext { 0 };
 
         // TCP Packets that were received out of order
-        std::deque<std::unique_ptr<TCPPacket>> outOfOrderQueue;
+        std::deque<std::shared_ptr<TCPPacket>> outOfOrderQueue;
 
         // TODO: Potentially include both R1 and R2 timeouts
         // TODO: Dynamically calculate RTO
@@ -192,7 +193,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         std::atomic<bool> retransmissionActive;
 
         // TCP Packets to retransmit. Removed from queue once ACKed
-        std::deque<std::unique_ptr<TCPPacket>> retransmissionQueue;
+        std::deque<std::shared_ptr<TCPPacket>> retransmissionQueue;
         TCPCircularBuffer recvBuffer;
 
         // NOTE: Condition variables used ONLY by listen sockets
@@ -208,10 +209,10 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         // Timer used after entering timed wait state
         std::chrono::time_point<std::chrono::steady_clock> timedWaitTime;
 
-        unsigned int generateISN(
-            std::string& srcAddr,
+        uint32_t generateISN(
+            std::string srcAddr,
             uint16_t srcPort,
-            std::string& destAddr,
+            std::string destAddr,
             uint16_t destPort
         );
 

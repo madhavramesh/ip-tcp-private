@@ -6,6 +6,7 @@
 #include <thread>
 #include <condition_variable>
 #include <mutex>
+#include <utility>
 
 #include <netinet/tcp.h>
 #include "include/tools/colors.h"
@@ -42,15 +43,28 @@ std::shared_ptr<TCPSocket> TCPNode::getSocket(const TCPTuple& socketTuple) {
     return nullptr;
 }
 
-std::unordered_map<int, TCPSocket> TCPNode::getSockets() {
+std::vector<SockInfo> TCPNode::getSockets() {
     // Clean up any sockets in TIME_WAIT state
     removeTimedWaitSockets();
 
-    std::unordered_map<int, TCPSocket> sd_table_copy;
-    for (auto& [id, sock] : sd_table) {
-       sd_table_copy.insert(std::make_pair(id, *sock)); 
+    std::vector<SockInfo> sockInfoVec;
+    for (auto [id, sock] : sd_table) {
+        SockInfo sockInfo = {
+            id, sock->toTuple(), TCPSocket::toString(sock->getState())
+        };
+        // sockInfo.id = id;   
+        // sockInfo.tuple = sock.toTuple();
+        // sockInfo.state = sock.getState();
+        sockInfoVec.push_back(sockInfo);
     }
-    return sd_table_copy;
+    return sockInfoVec;
+
+    // std::vector<std::pair<int, TCPSocket>> sd_table_copy;
+    // for (auto [id, sock] : sd_table) {
+    //     std::pair<int, TCPSocket> pair = std::make_pair(id, *sock);
+    //     sd_table_copy.insert(pair); // #TODO COME BACK TO THIS
+    // }
+    // return sd_table_copy;
 }
 
 void TCPNode::deleteSocket(TCPTuple socketTuple) {
@@ -109,7 +123,7 @@ int TCPNode::accept(int socket, std::string& address) {
     // Grab listener socket, if it exists
     auto sockIt = sd_table.find(socket);
     if (sockIt == sd_table.end()) {
-        std::cerr << red << "error: socket " << socket << " could not be found" color_reset << std::endl;
+        std::cerr << red << "error: socket " << socket << " could not be found" << color_reset << std::endl;
         return -1;
     }
 
@@ -183,7 +197,7 @@ int TCPNode::write(int socket, std::string& buf) {
         case TCPSocket::SocketState::ESTABLISHED:
         case TCPSocket::SocketState::CLOSE_WAIT:
             for (int i = 0; i < buf.size(); i += MAX_TRANSMIT_UNIT) {
-                std::string payload = buf.substr(i, MAX_TRANSMIT_UNIT)
+                std::string payload = buf.substr(i, MAX_TRANSMIT_UNIT);
                 auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), 
                                                        sock->getRecvNext(), payload);
                 sock->sendTCPPacket(tcpPacket);
@@ -232,14 +246,14 @@ int TCPNode::read(int socket, std::string& buf, bool blocking) {
             return -1;
         case TCPSocket::SocketState::ESTABLISHED:
         case TCPSocket::SocketState::FIN_WAIT1:
-        case TCPSocket::SocketState::FIN_WAIT2:
+        case TCPSocket::SocketState::FIN_WAIT2: {
             // TODO: If blocking call, queue for processing (some kind of cond variable?)
             int readSoFar = 0;
             int bytesToRead = buf.size();
 
             std::unique_lock<std::mutex> lk(readMutex);
-            while (readSofar != bytesToRead) {
-                readSoFar += sock->readRecvBuf(bytesToRead - readSoFar, buf)
+            while (readSoFar != bytesToRead) {
+                readSoFar += sock->readRecvBuf(bytesToRead - readSoFar, buf);
                 if (!blocking && readSoFar > 0) {
                     break;
                 }
@@ -258,13 +272,15 @@ int TCPNode::read(int socket, std::string& buf, bool blocking) {
             lk.unlock();
 
             return readSoFar;
-        case TCPSocket::SocketState::CLOSE_WAIT:
+        }
+        case TCPSocket::SocketState::CLOSE_WAIT: {
             int numRead = sock->readRecvBuf(buf.size(), buf); 
             if (numRead == 0) {
                 std::cerr << red << "error: connection closing" << color_reset << std::endl;
                 return -1;
             }
             return numRead;
+        }
         case TCPSocket::SocketState::CLOSING:
         case TCPSocket::SocketState::LAST_ACK:
         case TCPSocket::SocketState::TIME_WAIT:
@@ -357,7 +373,7 @@ void TCPNode::receive(
 void TCPNode::handleClient(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader, 
-    std::string payload) {
+    std::string& payload) {
 
     TCPTuple socketTuple = extractTCPTuple(ipHeader, tcpHeader);
 
@@ -427,10 +443,10 @@ void TCPNode::handleClient(
 
      // 5) Check ACK bit
     if (tcpHeader->th_flags & TH_ACK) {
-        transitionFromACKBit(tcpHeader, payload, sock);
+        transitionFromOtherACKBit(ipHeader, tcpHeader, payload, sock);
 
         tcp_seq ack = tcpHeader->th_ack;
-        if (ack <= sock->getUnAck() || ack > sock->getSendNext()) {
+        if (ack <= sock->getUnack() || ack > sock->getSendNext()) {
             return;
         }
         if (sock->getState() == TCPSocket::SocketState::CLOSED || 
@@ -449,7 +465,7 @@ void TCPNode::handleClient(
         
     // 8) Check FIN bit
     if (tcpHeader->th_flags & TH_FIN) {
-        processTransitionFromOtherFIN(tcpHeader, payload, sock);
+        transitionFromOtherFINBit(tcpHeader, payload, sock);
     }
 }
     
@@ -493,7 +509,7 @@ void TCPNode::transitionFromListen(std::shared_ptr<struct tcphdr> tcpHeader, std
     // Check for SYN
     if (tcpHeader->th_flags & TH_SYN) {
         // Add new socket to listen socket's map of SYN RECV connections
-        std::shared_ptr<TCPSocket> newSock = listenSock->addIncompleteConnection(newSock);
+        std::shared_ptr<TCPSocket> newSock = listenSock->addIncompleteConnection(tcpHeader, socketTuple);
 
         // Add to socket descriptor table
         int socketId = nextSockId++;
@@ -704,7 +720,7 @@ void TCPNode::transitionFromOtherSYNBit(std::shared_ptr<struct tcphdr> tcpHeader
         sock->getState() == TCPSocket::SocketState::LAST_ACK ||
         sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
             // RFC 793: send reset response
-            auto tcpPacket = sock->createTCPPacket(TH_RST, sock->getSeqNext(), sock->getRecvNext(), "");
+            auto tcpPacket = sock->createTCPPacket(TH_RST, sock->getSendNext(), sock->getRecvNext(), "");
             sock->sendTCPPacket(tcpPacket);
 
             // #TODO: send reset responses to outstanding receives and sends
@@ -716,7 +732,7 @@ void TCPNode::transitionFromOtherSYNBit(std::shared_ptr<struct tcphdr> tcpHeader
     }
 }
 
-void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct tcphdr> tcpHeader, 
+void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
 
     tcp_seq ack = tcpHeader->th_ack;
@@ -731,8 +747,8 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct tcphdr> tcpHeader
             if (!sock->isActiveOpen()) {
                 TCPTuple listenTuple = TCPTuple(NULL_IPADDR, sock->toTuple().getSrcPort(), NULL_IPADDR, 0);
                 if (socket_tuple_table.count(listenTuple)) {
-                    TCPSocket& listenSock = getSocket(listenTuple);
-                    listenSock->moveToCompleteconnection(sock);
+                    std::shared_ptr<TCPSocket> listenSock = getSocket(listenTuple);
+                    listenSock->moveToCompleteConnection(sock);
                 }
             }
 
@@ -814,7 +830,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct tcphdr> tcpHeader
             }
         }
 
-        if (ackBitSet && sock->getState() == TCPSocket::SocketState::LAST_ACK) {
+        if (sock->getState() == TCPSocket::SocketState::LAST_ACK) {
             // The only thing that can arrive in this state is an 
             // acknowledgment of our FIN. If our FIN is now acknowledged, 
             // delete the TCB, enter the CLOSED state, and return.
@@ -825,7 +841,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct tcphdr> tcpHeader
             }
         }
 
-        if (ackBitSet && sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
+        if (sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
             // The only thing that can arrive in this state is a 
             // retransmission of the remote FIN. Acknowledge it, and restart the 2 MSL timeout.
             if (tcpHeader->th_flags & TH_FIN) { // #todo check logic, do we need to check seq and ack too?
@@ -834,14 +850,14 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct tcphdr> tcpHeader
                 sock->sendTCPPacket(tcpPacket);
 
                 // Restart 2 MSL timeout
-                sock->resetTimeWaitTime();
+                sock->resetTimedWaitTime();
                 return;
             }
         }
 }
 
-void processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
-        std::string& payload, std:;shared_ptr<TCPSocket> sock) {
+void TCPNode::processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
+        std::string& payload, std::shared_ptr<TCPSocket> sock) {
 
     if (sock->getState() == TCPSocket::SocketState::ESTABLISHED || 
         sock->getState() == TCPSocket::SocketState::FIN_WAIT1   ||
@@ -887,7 +903,7 @@ void processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
     }
 }
 
-void transitionFromOtherFIN(std::shared_ptr<struct tcphdr> tcpHeader, 
+void TCPNode::TCPNode::transitionFromOtherFINBit(std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
 
     if (sock->getState() == TCPSocket::SocketState::CLOSED || 
@@ -925,7 +941,7 @@ void transitionFromOtherFIN(std::shared_ptr<struct tcphdr> tcpHeader,
         // If our FIN has been ACKed (perhaps in this segment), 
         // then enter TIME-WAIT, start the time-wait timer, turn off the other timers; 
         // otherwise, enter the CLOSING state.
-        if (ack == sock->getSendNext()) {
+        if (tcpHeader->th_ack == sock->getSendNext()) {
             sock->setState(TCPSocket::SocketState::TIME_WAIT);
             sock->resetTimedWaitTime();
         } else {
@@ -949,7 +965,7 @@ void TCPNode::removeTimedWaitSockets() {
     for (auto& [_, sock] : sd_table) {
         if (sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
             auto curTime = std::chrono::steady_clock::now();
-            auto timeDiff = curTime - sock->getTimedWaitTime();
+            auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(curTime - sock->getTimedWaitTime()).count();
             if (timeDiff > TIME_WAIT_LEN) {
                 deleteSocket(sock->toTuple());
             }

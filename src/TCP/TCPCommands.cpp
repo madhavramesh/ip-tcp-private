@@ -12,6 +12,7 @@
 #include "include/tools/colors.h"
 #include "include/TCP/TCPNode.h"
 #include "include/TCP/TCPCommands.h"
+#include "include/TCP/TCPSocket.h"
 
 const int INTERFACE_COL_SIZE = 15;
 const int ROUTE_COL_SIZE = 15;
@@ -64,11 +65,11 @@ void TCPCommands::sockets(std::string& args) {
     interfaceString << std::endl;
 
     // For each socket, print out the socket information
-    auto sockets = tcpNode->getSockets();
+    auto sockInfo = tcpNode->getSockets();
 
-    for (auto& [id, socket] : sockets) {
-        TCPTuple socketTuple = socket.toTuple();
-        std::string state = TCPSocket::toString(socket.getState());
+    for (auto& [id, socketTuple, state] : sockInfo) {
+        // TCPTuple socketTuple = socket->toTuple();
+        // std::string state = TCPSocket::toString(socket->getState());
 
         interfaceString << std::setw(INTERFACE_COL_SIZE) << id << " ";
         interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getSrcAddr() << " ";
@@ -192,7 +193,7 @@ void TCPCommands::send(std::string& args) {
 
     int socketId = stoi(parsedArgs[0]);
     std::string payload = parsedArgs[1];
-    std::cout << "your payload would be " << payload << std::endl
+    std::cout << "your payload would be " << payload << std::endl;
 
     int numSent = tcpNode->write(socketId, payload);
     if (numSent < 0) {
@@ -236,11 +237,12 @@ void TCPCommands::recv(std::string& args) {
     }
     int bytesToRead = stoi(parsedArgs[1]);
 
-    spaceIdx = args.find(' ');
-    std::string blockingStr = args.substr(prevSpaceIdx, spaceIdx);
-
     bool blocking = false;
-    if (blockingStr != std::string::npos) {
+    if (spaceIdx != std::string::npos) {
+        prevSpaceIdx = spaceIdx + 1;
+        spaceIdx = args.find(' ', prevSpaceIdx);
+        std::string blockingStr = args.substr(prevSpaceIdx, spaceIdx);
+        
         if (blockingStr != "y" && blockingStr != "n") {
             std::cerr << red << "syntax error: loop option must be 'y' or 'n'"
                 << color_reset << std::endl;
