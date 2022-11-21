@@ -55,6 +55,10 @@ std::unordered_map<int, TCPSocket> TCPNode::getSockets() {
 
 void TCPNode::deleteSocket(TCPTuple socketTuple) {
     int socketId = socket_tuple_table[socketTuple];
+    std::shared_ptr<TCPSocket> sock = sd_table[socketId];
+
+    sock->setState(TCPSocket::SocketState::CLOSED);
+
     sd_table.erase(socketId);
     socket_tuple_table.erase(socketTuple);
 }
@@ -488,12 +492,8 @@ void TCPNode::transitionFromListen(std::shared_ptr<struct tcphdr> tcpHeader, std
 
     // Check for SYN
     if (tcpHeader->th_flags & TH_SYN) {
-        std::shared_ptr<TCPSocket> newSock = std::make_shared<TCPSocket>(
-                socketTuple.getSrcAddr(), socketTuple.getSrcPort(), socketTuple.getDestAddr(), 
-                socketTuple.getDestPort(), ipNode);
-
         // Add new socket to listen socket's map of SYN RECV connections
-        listenSock->addIncompleteConnection(newSock);
+        std::shared_ptr<TCPSocket> newSock = listenSock->addIncompleteConnection(newSock);
 
         // Add to socket descriptor table
         int socketId = nextSockId++;

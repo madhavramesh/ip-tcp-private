@@ -156,6 +156,10 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
 
     private:
         std::shared_ptr<IPNode> ipNode;
+        
+        // ONLY used by passive open sockets 
+        // Cleans up any data in listen socket if it exists
+        std::shared_ptr<TCPSocket> originator { nullptr };
 
         bool activeOpen { false };
         SocketState state { SocketState::CLOSED };

@@ -125,7 +125,8 @@ void TCPCommands::accept(std::string& args) {
     int sockClient; 
     
     // maybe use boost::ref() on address
-    std::thread accept_thread = std::thread(&TCPCommands::accept_loop, this, std::cref(sockClient), std::cref(sockListener), std::cref(address));
+    std::thread accept_thread = std::thread(&TCPCommands::accept_loop, this, std::cref(sockClient), 
+                                            std::cref(sockListener), std::cref(address));
     accept_thread.detach();
 }
 
@@ -150,7 +151,7 @@ void TCPCommands::connect(std::string& args) {
     // Check that port is a number
     for (char c : parsedArgs[1]) {
         if (!isdigit(c)) {
-            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            std::cerr << red << "usage: " << "connect " << connectParams << color_reset << std::endl;
             return;
         }
     }
@@ -168,10 +169,10 @@ void TCPCommands::connect(std::string& args) {
 // Sends data to the given socket
 void TCPCommands::send(std::string& args) {
     std::vector<std::string> parsedArgs;
-    // Parse the ip and port
+    // Parse the socket id and payload
     int prevSpaceIdx = -1;
     int spaceIdx = -1;
-    for (int i = 0; i < 1; i++) {
+    for (int i = 0; i < 2; i++) {
         prevSpaceIdx = spaceIdx + 1;
         spaceIdx = args.find(' ', prevSpaceIdx);
 
@@ -181,8 +182,16 @@ void TCPCommands::send(std::string& args) {
         parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
     }
 
-    std::string socketId = parsedArgs[0];
-    std::string payload = args.substr(spaceIdx + 1);
+    // Confirm that socket id is a digit
+    for (char c : parsedArgs[0]) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            return;
+        }
+    }
+
+    int socketId = stoi(parsedArgs[0]);
+    std::string payload = parsedArgs[1];
     std::cout << "your payload would be " << payload << std::endl
 
     int numSent = tcpNode->write(socketId, payload);
@@ -195,19 +204,59 @@ void TCPCommands::send(std::string& args) {
 }
 
 void TCPCommands::recv(std::string& args) {
-    if (args.empty()) {
-        std::cerr << red << "usage: " << "recv " << recvParams << color_reset << std::endl;
-        return;
+    std::vector<std::string> parsedArgs;
+    // Parse the socket id, number of bytes to read, and whether to block
+    int prevSpaceIdx = -1;
+    int spaceIdx = -1;
+    for (int i = 0; i < 2; i++) {
+        prevSpaceIdx = spaceIdx + 1;
+        spaceIdx = args.find(' ', prevSpaceIdx);
+
+        if (prevSpaceIdx == std::string::npos) {
+            std::cerr << red << "usage: " << "send " << connectParams << color_reset << std::endl;
+        }
+        parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
     }
 
-    // #TODO if socket does not exist, print error message
+    // Confirm that socket id is a digit
+    for (char c : parsedArgs[0]) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            return;
+        }
+    }
+    int socketId = stoi(parsedArgs[0]);
 
-    // #TODO check if need to block
+    // Confirm that number of bytes to read is a digit
+    for (char c : parsedArgs[1]) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            return;
+        }
+    }
+    int bytesToRead = stoi(parsedArgs[1]);
 
-    // #TODO if in closed-wait state, read calls should return anything in buffer
-    // because other side won't send more messages
+    spaceIdx = args.find(' ');
+    std::string blockingStr = args.substr(prevSpaceIdx, spaceIdx);
 
-    // #TODO if in timed wait state, return "error: connection closing"
+    bool blocking = false;
+    if (blockingStr != std::string::npos) {
+        if (blockingStr != "y" && blockingStr != "n") {
+            std::cerr << red << "syntax error: loop option must be 'y' or 'n'"
+                << color_reset << std::endl;
+            return;
+        } else {
+            blocking = blockingStr == "y" ? true : false;
+        }
+    }
+
+    std::string buf;
+    buf.resize(bytesToRead);
+    int bytesRead = tcpNode->read(socketId, buf, blocking);
+
+    std::cout << "read on " << buf.size() << "bytes returned " << bytesRead 
+        << "; contents of buffer: '" << buf << "'" << std::endl;
+
 }
 
 void TCPCommands::shutdown(std::string& args) {

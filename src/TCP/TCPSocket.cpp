@@ -36,6 +36,20 @@ TCPSocket::SocketState TCPSocket::getState() {
 }
 
 void TCPSocket::setState(SocketState newState) {
+    if (newState == SocketState::CLOSED) {
+        if (state == SocketState::SYN_SENT) {
+            originator.incompleteConns.erase(toTuple());
+        } else if (state == SocketState::ESTABLISHED) {
+            for (auto it = originator.completeConns.begin(); 
+                    it != originator.completeConns.end(); it++) {
+                if ((*it)->toTuple() == toTuple()) {
+                    completeConns.erase(it);
+                    break;
+                }
+            }
+        }
+    }
+    originator = nullptr;
     state = newState;
 }
 
@@ -154,6 +168,9 @@ std::shared_ptr<TCPSocket> TCPSocket::socket_accept() {
     std::shared_ptr<TCPSocket> acceptedSock = completeConns.front();
     completeConns.pop_front();
 
+    // accepted socket now has no originator
+    accceptedSock.originator = nullptr;
+
     lk.unlock();
     return acceptedSock;
 }
@@ -204,8 +221,15 @@ void TCPSocket::socket_connect() {
     sendTCPPacket(tcpPacket);
 }
 
-void TCPSocket::addIncompleteConnection(std::shared_ptr<struct tcphdr> tcpHeader, std::shared_ptr<TCPSocket> newSock) {
+std::shared_ptr<TCPSocket> TCPSocket::addIncompleteConnection(std::shared_ptr<struct tcphdr> tcpHeader, 
+        TCPTuple& socketTuple) {
     // Set up new client socket
+    std::shared_ptr<tcpsocket> newsock = std::make_shared<tcpsocket>(
+            sockettuple.getsrcaddr(), sockettuple.getsrcport(), sockettuple.getdestaddr(), 
+            sockettuple.getdestport(), ipnode);
+
+    newSock->originator = shared_from_this();
+
     newSock->activeOpen = false;
     newSock->state = SocketState::SYN_RECV;
 
@@ -264,7 +288,7 @@ void TCPSocket::sendTCPPacket(std::shared_ptr<TCPSocket::TCPPacket>& tcpPacket) 
     memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
 
     // Check if sequence number is within receiver's window
-    if (tcpHeader->th_seq < unAck + sendWnd) {
+    if (tcpHeader->th_seq <= unAck + sendWnd) {
         // Call IP's send method to send packet
         ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
                         TCP_PROTOCOL_NUMBER); 
