@@ -28,16 +28,20 @@ TCPSocket::~TCPSocket() {
 }
 
 TCPTuple TCPSocket::toTuple() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return socketTuple;
 }
 
 TCPSocket::SocketState TCPSocket::getState() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return state;
 }
 
 void TCPSocket::setState(SocketState newState) {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     if (newState == SocketState::CLOSED) {
         if (state == SocketState::SYN_SENT) {
+            std::unique_lock<std::mutex> lkAccept(originator.acceptMutex);
             originator.incompleteConns.erase(toTuple());
         } else if (state == SocketState::ESTABLISHED) {
             for (auto it = originator.completeConns.begin(); 
@@ -54,85 +58,107 @@ void TCPSocket::setState(SocketState newState) {
 }
 
 void TCPSocket::setSendWnd(uint16_t newSendWnd) {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     sendWnd = newSendWnd;
 }
 
 void TCPSocket::setSendWl1(uint32_t newSendWl1) {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     sendWl1 = newSendWl1;
 }
 
 void TCPSocket::setSendWl2(uint32_t newSendWl2) {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     sendWl2 = newSendWl2;
 }
 
 void TCPSocket::setUnack(uint32_t newUnack) {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     unAck = newUnack;
 }
 
 void TCPSocket::setIrs(uint32_t newIrs) {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     irs = newIrs;
 }
 
 void TCPSocket::setRecvBufNext(uint32_t newRecvBufNext) {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     recvBuffer.setNext(newRecvBufNext);
 }
 
 void TCPSocket::resetTimedWaitTime() {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     timedWaitTime = std::chrono::steady_clock::now();
 }
 
 uint32_t TCPSocket::getUnack() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return unAck;
 }
 
 uint32_t TCPSocket::getRecvNext() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return recvBuffer.getNext();
 }
 
 uint32_t TCPSocket::getRecvWnd() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return recvBuffer.getWindowSize();
 }
 
 uint32_t TCPSocket::getSendNext() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return sendNext;
 }
 uint32_t TCPSocket::getIss() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return iss;
 }
 
 uint32_t TCPSocket::getIrs() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return irs;
 }
 
 uint16_t TCPSocket::getSendWnd() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return sendWnd;
 }
 
 uint32_t TCPSocket::getSendWl1() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return sendWl1;
 }
 
 uint32_t TCPSocket::getSendWl2() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return sendWl2;
 }
 
 bool TCPSocket::isActiveOpen() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return activeOpen;
 }
 
 std::chrono::time_point<std::chrono::steady_clock> TCPSocket::getTimedWaitTime() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return timedWaitTime;
 }
 
 void TCPSocket::initializeRecvBuffer(uint32_t seqNum) {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     recvBuffer.initializeWith(seqNum);
 }
 
 bool TCPSocket::retransmissionQueueEmpty() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
     return retransmissionQueue.empty();
 }
 
 void TCPSocket::socket_listen() {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
+
     activeOpen = false;
     state = SocketState::LISTEN;
     socketTuple = TCPTuple(NULL_IPADDR, socketTuple.getSrcPort(), NULL_IPADDR, 0);
@@ -151,11 +177,10 @@ void TCPSocket::socket_listen() {
     retransmissionQueue = {};
 
     recvBuffer = TCPCircularBuffer(RECV_WINDOW_SIZE);
+
+    std::unique_lock<std::mutex> lk(acceptMutex);
     incompleteConns = {};
-    {
-        std::scoped_lock lk(acceptMutex);
-        completeConns = {};
-    }
+    completeConns = {};
 }
 
 std::shared_ptr<TCPSocket> TCPSocket::socket_accept() {
@@ -170,8 +195,6 @@ std::shared_ptr<TCPSocket> TCPSocket::socket_accept() {
 
     // accepted socket now has no originator
     accceptedSock.originator = nullptr;
-
-    lk.unlock();
     return acceptedSock;
 }
 
@@ -197,13 +220,15 @@ std::shared_ptr<TCPSocket::TCPPacket> TCPSocket::createTCPPacket(unsigned char f
     tcpHeader->th_sum = computeTCPChecksum(srcIp, destIp, tcpHeader, payload);
 
     std::shared_ptr<TCPPacket> tcpPacket = std::make_shared<TCPPacket>();
-    tcpPacket->tcpHeader = std::move(tcpHeader);
+    tcpPacket->tcpHeader = tcpHeader;
     tcpPacket->payload = payload;
-    return std::move(tcpPacket); 
+    return tcpPacket; 
 }
 
 
 void TCPSocket::socket_connect() {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
+
     activeOpen = true;
     state = SocketState::SYN_SENT;
 
@@ -215,6 +240,8 @@ void TCPSocket::socket_connect() {
     irs = 0;
     unAck = iss;
     sendNext = iss + 1;
+
+    lk.unlock();
 
     // Create TCP packet and send SYN 
     auto tcpPacket = createTCPPacket(TH_SYN, iss, 0, "");
@@ -228,6 +255,7 @@ std::shared_ptr<TCPSocket> TCPSocket::addIncompleteConnection(std::shared_ptr<st
             sockettuple.getsrcaddr(), sockettuple.getsrcport(), sockettuple.getdestaddr(), 
             sockettuple.getdestport(), ipnode);
 
+    std::unique_lock<std::shared_mutex> lkNew(newSock->socketMutex);
     newSock->originator = shared_from_this();
 
     newSock->activeOpen = false;
@@ -246,21 +274,23 @@ std::shared_ptr<TCPSocket> TCPSocket::addIncompleteConnection(std::shared_ptr<st
     newSock->recvBuffer.initializeWith(tcpHeader->th_seq);
 
     // Add socket to corresponding listening socket's incomplete connections
+    std::unique_lock<std::mutex> lk(acceptMutex);
     incompleteConns.insert(std::make_pair(newSock->toTuple(), newSock));
 }
 
 void TCPSocket::moveToCompleteConnection(std::shared_ptr<TCPSocket> sock) {
     TCPTuple& socketTuple = sock->toTuple();
+
+    std::unique_lock<std::mutex> lk(acceptMutex);
     if (!incompleteConns.count(socketTuple)) {
         return;
     }
 
-    { 
-        std::scoped_lock lk(acceptMutex);
-        completeConns.push_back(incompleteConns[socketTuple]);
-    }
-    acceptCond.notify_one();
+    completeConns.push_back(incompleteConns[socketTuple]);
     incompleteConns.erase(socketTuple);
+    lk.unlock();
+
+    acceptCond.notify_one();
 }
 
 /**
@@ -270,25 +300,54 @@ void TCPSocket::moveToCompleteConnection(std::shared_ptr<TCPSocket> sock) {
  * @param length 
  * @return int 
  */
-int TCPSocket::readRecvBuf(int numBytes, std::string& buf) {
-    return recvBuffer.read(numBytes, buf);
+int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
+    buf.resize(numBytes);
+
+    std::unique_lock<std::mutex> lk(readMutex);
+
+    int readSoFar = 0;
+    while (readSoFar != numBytes) {
+        std::string tempBuf(numBytes - readSoFar, '\0');
+        readSoFar += recvBuffer.read(numBytes - readSoFar, tempBuf);
+        std::copy(tempBuf.begin(), tempBuf.end(), buf.begin() + readSoFar);
+
+        if (!blocking && readSoFar > 0) {
+            break;
+        }
+        // Must block on condition variable
+        readCond.wait(lk);
+
+        if (state != TCPSocket::SocketState::ESTABLISHED &&
+            state != TCPSocket::SocketState::FIN_WAIT1 && 
+            state != TCPSocket::SocketState::FIN_WAIT2) {
+            std::cerr << yellow << "warning: no more bytes can be sent over connection" 
+                << color_reset << std::endl;
+            break;
+        }
+    }
+
+    return readSoFar;
 }
 
 int TCPSocket::writeRecvBuf(int numBytes, std::string& payload, uint32_t pos) {
-    return recvBuffer.write(numBytes, payload, pos);
+    std::unique_lock<std::mutex> lk(readMutex);
+    int numWritten = recvBuffer.write(numBytes, payload, pos);
+    lk.unlock();
+
+    readCond.notify_one();
+    return numWritten;
 }
 
 void TCPSocket::sendTCPPacket(std::shared_ptr<TCPSocket::TCPPacket>& tcpPacket) {
     std::shared_ptr<struct tcphdr> tcpHeader = tcpPacket->tcpHeader;
     std::string payload = tcpPacket->payload;
 
-    std::string newPayload = "";
-    newPayload.resize(sizeof(struct tcphdr));
+    std::string newPayload(sizeof(struct tcphdr) + payload.size(), '\0');
     memcpy(&newPayload[0], tcpHeader.get(), sizeof(struct tcphdr));
     memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
 
     // Check if sequence number is within receiver's window
-    if (tcpHeader->th_seq <= unAck + sendWnd) {
+    if (tcpHeader->th_seq < unAck + sendWnd) {
         // Call IP's send method to send packet
         ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
                         TCP_PROTOCOL_NUMBER); 
@@ -301,9 +360,17 @@ void TCPSocket::sendTCPPacket(std::shared_ptr<TCPSocket::TCPPacket>& tcpPacket) 
     // Add to retransmission queue if necessary 
     bool expectAck = (tcpHeader->th_flags & (TH_SYN | TH_FIN)) || (payload.size() > 0);
     if (expectAck) {
-        retransmissionQueue.push_back(std::move(tcpPacket));
+        std::unique_lock<std::shared_mutex> lk(socketMutex);
+        retransmissionQueue.push_back(tcpPacket);
+        lk.unlock();
+
         if (!retransmissionActive) {
             retransmissionActive = true;
+            lastRetransmitTime = std::chrono::steady_clock::now();
+        }
+
+        std::shared_lock<std::shared_mutex> lkShared(socketMutex);
+        if (sendWnd == 0) {
             lastRetransmitTime = std::chrono::steady_clock::now();
         }
     }
@@ -315,6 +382,8 @@ void TCPSocket::receiveTCPPacket(
     std::string& payload) {
 
     if (tcpHeader->th_flags & TH_ACK) {
+        std::unique_lock<std::shared_mutex> lk(socketMutex);
+
         while (!retransmissionQueue.empty()) {
             auto& packet = retransmissionQueue.front();
             int additionalByte = tcpHeader->th_flags & (TH_SYN | TH_FIN);
@@ -340,6 +409,8 @@ void TCPSocket::retransmitPackets() {
         return;
     }
 
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
+
     std::chrono::milliseconds retransmitInterval(1000);
     for (int i = 0; i < retransmitAttempts; i++) {
         retransmitInterval *= 2;
@@ -360,11 +431,27 @@ void TCPSocket::retransmitPackets() {
         state = SocketState::CLOSED;
         return;
     }
+    lk.unlock();
+
+    // Check if zero window probing is necessary
+    if (sendWnd == 0) {
+        zeroWindowProbe();
+        return;
+    }
 
     // Retransmit packets
+    sd::shared_lock lkShared(socketMutex);
+    flushRetransmission();
+}
+
+void TCPSocket::flushRetransmission() {
+    if (!retransmissionActive) {
+        return;
+    }
+
+    sd::shared_lock lkShared(socketMutex);
     for (auto& packet : retransmissionQueue) {
-        std::string newPayload = "";
-        newPayload.resize(sizeof(struct tcphdr));
+        std::string newPayload(sizeof(struct tcphdr) + payload.size(), '\0');
         memcpy(&newPayload[0], packet->tcpHeader.get(), sizeof(struct tcphdr));
         memcpy(&newPayload[sizeof(struct tcphdr)], &packet->payload[0], packet->payload.size());
 
@@ -373,19 +460,25 @@ void TCPSocket::retransmitPackets() {
     }
 }
 
-void TCPSocket::flushRetransmission() {
-    if (!retransmissionActive) {
-        return;
-    }
+void TCPSocket::zeroWindowProbe() {
+    std::shared_lock<std::shared_mutex> lk(socketMutex);
 
     for (auto& packet : retransmissionQueue) {
-        std::string newPayload = "";
-        newPayload.resize(sizeof(struct tcphdr));
-        memcpy(&newPayload[0], packet->tcpHeader.get(), sizeof(struct tcphdr));
-        memcpy(&newPayload[sizeof(struct tcphdr)], &packet->payload[0], packet->payload.size());
+        int additionalByte = packet->tcpHeader->th_flags & (TH_SYN | TH_FIN);
+        uint32_t segStart = packet->tcpHeader->th_seq;
+        uint32_t segEnd = segStart + packet->payload.size() + additionalByte;
+        if (unAck >= segStart && unAck < segEnd) {
+            char probeByte = packet->payload[unAck - segStart];
+            auto zeroProbe = 
+                createTCPPacket(TH_ACK, sendNext, recvBuffer.getNext(), probeByte);
 
-        ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
-                        TCP_PROTOCOL_NUMBER); 
+            std::string newPayload(sizeof(struct tcphdr) + 1, '\0');
+            memcpy(&newPayload[0], newTcpHeader.get(), sizeof(struct tcphdr));
+            newPayload[sizeof(struct tcphdr) + 1] = probeByte;
+
+            ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
+                            TCP_PROTOCOL_NUMBER);
+        }
     }
 }
 

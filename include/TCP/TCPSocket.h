@@ -14,6 +14,7 @@
 #include <tuple>
 #include <chrono> 
 #include <mutex>
+#include <shared_mutex>
 
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
@@ -133,7 +134,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         void addIncompleteConnection(std::shared_ptr<TCPSocket> newSock);
         void moveToCompleteConnection(std::shared_ptr<TCPSocket> newSock);
 
-        int readRecvBuf(int numBytes, std::string& buf);
+        int readRecvBuf(int numBytes, std::string& buf, bool blocking);
         int writeRecvBuf(int numBytes, std::string& payload, uint32_t pos);
 
         void sendTCPPacket(std::unique_ptr<struct TCPPacket>& tcpPacket);
@@ -158,6 +159,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
 
     private:
         std::shared_ptr<IPNode> ipNode;
+        std::shared_mutex socketMutex;
         
         // ONLY used by passive open sockets 
         // Cleans up any data in listen socket if it exists
@@ -192,7 +194,11 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         std::atomic<bool> retransmissionActive;
 
         // TCP Packets to retransmit. Removed from queue once ACKed
-        std::deque<std::unique_ptr<TCPPacket>> retransmissionQueue;
+        std::deque<std::shared_ptr<TCPPacket>> retransmissionQueue;
+
+        // Recv Buffer and condition variable to use when new bytes have been added
+        std::mutex readMutex;
+        std::condition_variable readCond;
         TCPCircularBuffer recvBuffer;
 
         // NOTE: Condition variables used ONLY by listen sockets
