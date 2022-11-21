@@ -67,7 +67,7 @@ void TCPCommands::sockets(std::string& args) {
     auto sockets = tcpNode->getSockets();
 
     for (auto& [id, socket] : sockets) {
-        TCPTuple& socketTuple = socket.toTuple();
+        TCPTuple socketTuple = socket.toTuple();
         std::string state = TCPSocket::toString(socket.getState());
 
         interfaceString << std::setw(INTERFACE_COL_SIZE) << id << " ";
@@ -162,7 +162,7 @@ void TCPCommands::connect(std::string& args) {
     if (sock < 0) {
         std::cerr << red << "Failed to connect to " << ip << ":" << port << color_reset << std::endl;
     }
-    std::cout << dim "connect returned " << sock << color_reset << std::endl;
+    std::cout << dim << "connect returned " << sock << color_reset << std::endl;
 }
 
 // Sends data to the given socket
@@ -181,9 +181,9 @@ void TCPCommands::send(std::string& args) {
         parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
     }
 
-    std::string socketId = parsedArgs[0];
+    int socketId = std::stoi(parsedArgs[0]);
     std::string payload = args.substr(spaceIdx + 1);
-    std::cout << "your payload would be " << payload << std::endl
+    std::cout << "your payload would be " << payload << std::endl;
 
     int numSent = tcpNode->write(socketId, payload);
     if (numSent < 0) {
