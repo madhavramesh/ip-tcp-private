@@ -30,11 +30,13 @@ const uint16_t RECV_WINDOW_SIZE = 65535;
 // For this project, this is too long so we use 1 ms
 const int DEFAULT_RTO = 1;              // milliseconds
 const int MAX_RETRANSMITS = 5;          // doesn't account for calculation of R1 and R2
-const int TIME_WAIT_LEN = 120000        // milliseconds
+const int TIME_WAIT_LEN = 120000;       // milliseconds
 
 const int TCP_PROTOCOL_NUMBER = 6;
 
 const std::string NULL_IPADDR = "0.0.0.0";
+
+class IPNode; // forward declaration 
 
 class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
     public:

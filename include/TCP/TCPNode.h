@@ -88,7 +88,7 @@ class TCPNode {
         void close(int socket);
 
         // Returns all sockets in socket descriptor table
-        std::unordered_map<int, TCPSocket>> getSockets();
+        std::unordered_map<int, TCPSocket> getSockets();
 
         // Used to start a separate thread to retransmit packets
         void retransmitPackets();
@@ -134,22 +134,22 @@ class TCPNode {
 
         void transitionFromClosed(
             std::shared_ptr<struct tcphdr> tcpHeader,
-            std::string& payload
-            TCPTuple& socketTuple,
+            std::string& payload,
+            TCPTuple& socketTuple
         );
 
         void transitionFromListen(
             std::shared_ptr<struct tcphdr> tcpHeader,
             std::string& payload,
             std::shared_ptr<TCPSocket> listenSock, 
-            TCPTuple& socketTuple, 
+            TCPTuple& socketTuple
         );
 
         void transitionFromSynSent(
             std::shared_ptr<struct tcphdr> tcpHeader,
             std::shared_ptr<struct ip> ipHeader,
             std::string& payload,
-            std::shared_ptr<TCPSocket> sock, 
+            std::shared_ptr<TCPSocket> sock
         );
 
         bool segmentIsAcceptable(
