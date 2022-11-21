@@ -304,11 +304,6 @@ TCPTuple TCPNode::extractTCPTuple(std::shared_ptr<struct ip> ipHeader,
     return TCPTuple(localAddr, localPort, remoteAddr, remotePort);
 }
 
-uint32_t TCPNode::calculateSegmentEnd(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
-    int additionalByte = tcpHeader->th_flags & (TH_SYN | TH_FIN);
-    return tcpHeader->th_seq + payload.size() + additionalByte;
-}
-
 void TCPNode::receive(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader,
@@ -444,7 +439,7 @@ void TCPNode::transitionFromClosed(std::shared_ptr<struct tcphdr> tcpHeader,
             tempSock->sendTCPPacket(tcpPacket);
         } else {
             // Ack bit off
-            uint32_t segEnd = calculateSegmentEnd(tcpHeader, payload);
+            uint32_t segEnd = TCPSocket::calculateSegmentEnd(tcpHeader, payload);
             auto tcpPacket = tempSock->createTCPPacket(TH_RST, 0, segEnd, "");
             tempSock->sendTCPPacket(tcpPacket);
         }
@@ -571,7 +566,7 @@ bool TCPNode::segmentIsAcceptable(std::shared_ptr<struct tcphdr> tcpHeader,
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
 
     uint32_t segSeq   = tcpHeader->th_seq;
-    uint32_t segEnd   = calculateSegmentEnd(tcpHeader, payload);
+    uint32_t segEnd   = TCPSocket::calculateSegmentEnd(tcpHeader, payload);
     uint32_t recvNext = sock->getRecvNext();
     uint32_t recvLast = recvNext + sock->getRecvWnd();
 
@@ -604,7 +599,7 @@ bool TCPNode::segmentIsAcceptable(std::shared_ptr<struct tcphdr> tcpHeader,
 
 void TCPNode::trimPayload(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
     uint32_t segSeq   = tcpHeader->th_seq;
-    uint32_t segEnd   = calculateSegmentEnd(tcpHeader, payload);
+    uint32_t segEnd   = TCPSocket::calculateSegmentEnd(tcpHeader, payload);
     uint32_t recvNext = sock->getRecvNext();
     uint32_t recvLast = recvNext + sock->getRecvWnd();
 
@@ -833,18 +828,18 @@ void processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
             // For now, only add if sequence number matches exactly
             // #todo handle case where seq number is less than expected
             if (tcpHeader->th_seq == sock->getRecvNext()) {
-                int numWritten = sock->writeRecvBuf(payload.size(), payload, sock->getRecvNext());
+                int numWritten = sock->writeRecvBuf(payload.size(), payload);
 
-                // move next byte expected pointer forward
-                sock->setRecvBufNext(sock->getSendNext() + numWritten);
-
-                // TODO: loop through out of order queue to try and fill in
+                // combine early arrivals if possible
+                handleEarlyArrivals();
 
                 // send ack
                 // note, we don't have to worry about send window bc we are sending an empty payload
                 auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), 
                                                        sock->getRecvNext(), "");
                 sock->sendTCPPacket(tcpPacket);
+            } else if (tcpHeader->th_seq > sock->getRecvNext()) {
+                sock->addEarlyArrival(tcpHeader, payload);
             }
             // TODO: consider piggy backing
         }

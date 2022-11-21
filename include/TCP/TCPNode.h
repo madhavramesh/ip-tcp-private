@@ -115,11 +115,6 @@ class TCPNode {
             std::shared_ptr<struct tcphdr> tcpHeader
         );
 
-        uint32_t calculateSegmentEnd(
-            std::shared_ptr<struct tcphdr> tcpHeader, 
-            std::string& payload
-        );
-
         void receive(
             std::shared_ptr<struct ip> ipHeader, 
             std::shared_ptr<struct tcphdr> tcpHeader,

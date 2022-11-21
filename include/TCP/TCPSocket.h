@@ -15,6 +15,7 @@
 #include <chrono> 
 #include <mutex>
 #include <shared_mutex>
+#include <priority_queue>
 
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
@@ -135,7 +136,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         void moveToCompleteConnection(std::shared_ptr<TCPSocket> newSock);
 
         int readRecvBuf(int numBytes, std::string& buf, bool blocking);
-        int writeRecvBuf(int numBytes, std::string& payload, uint32_t pos);
+        int writeRecvBuf(int numBytes, std::string& payload);
 
         void sendTCPPacket(std::unique_ptr<struct TCPPacket>& tcpPacket);
         void receiveTCPPacket(
@@ -144,11 +145,19 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             std::string& payload
         );
 
+        void addEarlyArrival(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload);
+
         std::unique_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
         uint32_t ackNum, std::string payload);
 
         void retransmitPackets();
         void flushRetransmission();
+
+        static uint32_t calculateSegmentEnd(
+            std::shared_ptr<struct tcphdr> tcpHeader,
+            std::string& payload
+        );
+
 
         static uint16_t computeTCPChecksum(
             uint32_t virtual_ip_src,
@@ -180,7 +189,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         uint32_t sendNext { 0 };
 
         // TCP Packets that were received out of order
-        std::deque<std::unique_ptr<TCPPacket>> outOfOrderQueue;
+        std::priority_queue<std::shared_ptr<TCPPacket>> earlyArrivals;
 
         // TODO: Potentially include both R1 and R2 timeouts
         // TODO: Dynamically calculate RTO

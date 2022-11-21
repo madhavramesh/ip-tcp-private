@@ -304,6 +304,7 @@ int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
     buf.resize(numBytes);
 
     std::unique_lock<std::mutex> lk(readMutex);
+    std::shared_lock<std::shared_mutex> lkSocket(socketMutex);
 
     int readSoFar = 0;
     while (readSoFar != numBytes) {
@@ -329,13 +330,51 @@ int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
     return readSoFar;
 }
 
-int TCPSocket::writeRecvBuf(int numBytes, std::string& payload, uint32_t pos) {
+int TCPSocket::writeRecvBuf(int numBytes, std::string& payload) {
     std::unique_lock<std::mutex> lk(readMutex);
-    int numWritten = recvBuffer.write(numBytes, payload, pos);
+    int numWritten = recvBuffer.write(numBytes, payload);
     lk.unlock();
 
     readCond.notify_one();
     return numWritten;
+}
+
+void TCPSocket::addEarlyArrival(std::shared_ptr<struct tcphdr> tcpHeader, 
+        std::string& payload) {
+
+    std::unique_lock<std::mutex> lk(socketMutex);
+
+    std::shared_ptr<TCPPacket> packet = std::make_shared<TCPPacket>();
+    packet->tcpHeader = tcpHeader;
+    packet->payload = payload;
+
+    earlyArrivals.push(packet);
+}
+
+void TCPSocket::handleEarlyArrivals() {
+    std::unique_lock<std::mutex> lk(readMutex);
+    std::unique_lock<std::shared_mutex> lkSocket(socketMutex);
+
+    auto packet = earlyArrivals.top();
+    while (recvBuffer.getNext() >= calculateSegmentEnd(packet->tcpHeader, packet->payload) {
+        earlyArrivals.pop();
+        packet = earlyArrivals.top();
+    }
+
+    int offset;
+    int numToCopy;
+    int numCopied;
+    std::string buf;
+    while (recvBuffer.getNext() >= packet->tcpHeader->th_seq) {
+        earlyArrivals.pop();
+
+        offset = recvBuffer.getNext() - packet->tcpHeader->th_seq;
+        numToCopy = packet->payload.size() - offset;
+        buf = payload.substr(offset);
+
+        numCopied = recvBuffer.write(numToCopy, buf);
+        packet = earlyArrivals.top();
+    }
 }
 
 void TCPSocket::sendTCPPacket(std::shared_ptr<TCPSocket::TCPPacket>& tcpPacket) {
@@ -386,8 +425,7 @@ void TCPSocket::receiveTCPPacket(
 
         while (!retransmissionQueue.empty()) {
             auto& packet = retransmissionQueue.front();
-            int additionalByte = tcpHeader->th_flags & (TH_SYN | TH_FIN);
-            uint32_t segEnd = packet->tcpHeader->th_seq + packet->payload.size() + additionalByte;
+            uint32_t segEnd = calculateSegmentEnd(packet->tcpHeader, packet->payload);
 
             if (segEnd <= tcpHeader->th_ack) {
                 retransmissionQueue.pop_front();
@@ -464,9 +502,8 @@ void TCPSocket::zeroWindowProbe() {
     std::shared_lock<std::shared_mutex> lk(socketMutex);
 
     for (auto& packet : retransmissionQueue) {
-        int additionalByte = packet->tcpHeader->th_flags & (TH_SYN | TH_FIN);
         uint32_t segStart = packet->tcpHeader->th_seq;
-        uint32_t segEnd = segStart + packet->payload.size() + additionalByte;
+        uint32_t segEnd = calculateSegmentEnd(packet->tcpHeader, packet->payload);
         if (unAck >= segStart && unAck < segEnd) {
             char probeByte = packet->payload[unAck - segStart];
             auto zeroProbe = 

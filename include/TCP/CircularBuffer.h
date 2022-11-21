@@ -20,7 +20,7 @@ class TCPCircularBuffer {
         void initializeWith(int n);
 
         int read(int numBytes, std::string &buf);
-        int write(int numBytes, std::string& buf, uint32_t pos);
+        int write(int numBytes, std::string& buf);
         int getNumBytes(int numBytes, std::string& buf);
 
         int getWindowSize();
