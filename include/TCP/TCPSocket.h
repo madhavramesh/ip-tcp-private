@@ -30,7 +30,8 @@ const uint16_t RECV_WINDOW_SIZE = 65535;
 
 // RFC states that lower bound for RTO should be 1 second
 // For this project, this is too long so we use 1 ms
-const int DEFAULT_RTO = 1;              // milliseconds
+// #todo this was changed
+const int DEFAULT_RTO = 1000;              // milliseconds
 const int MAX_RETRANSMITS = 5;          // doesn't account for calculation of R1 and R2
 const int TIME_WAIT_LEN = 120000;       // milliseconds
 
@@ -123,11 +124,13 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         void setSeqNum(uint32_t newSeqNum);
         void setIrs(uint32_t newIrs);
         void setRecvBufNext(uint32_t newRecvBufNext);
+        void setRecvBufLast(uint32_t newRecvBufLast);
         void resetTimedWaitTime();
         
         SocketState getState();
         uint32_t getUnack();
         uint32_t getRecvNext();
+        uint32_t getRecvLast();
         uint32_t getRecvWnd();
         uint32_t getSendNext();
         uint32_t getIss();

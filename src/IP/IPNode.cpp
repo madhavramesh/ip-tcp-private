@@ -172,6 +172,7 @@ void IPNode::sendMsg(std::string destAddr, std::string srcAddr, const std::strin
     
     // Check if destination address exists in the routing table
     // Useful if routing table entry expires
+    std::cout << "destAddr: " << destAddr << std::endl;
     std::string nextHopAddr;
     int cost;
     std::chrono::time_point<std::chrono::steady_clock> time;
@@ -182,7 +183,7 @@ void IPNode::sendMsg(std::string destAddr, std::string srcAddr, const std::strin
 
         if (routingTable.find(destAddr) == routingTable.end()) {
             std::cerr << red << "Cannot send to " << destAddr
-                << ", it is an unreachable address." << color_reset << std::endl;
+                << ", it is an unreachable address. 1" << color_reset << std::endl;
             return;
         }
         std::tie(nextHopAddr, cost, time) = routingTable.at(destAddr);
@@ -202,7 +203,7 @@ void IPNode::sendMsg(std::string destAddr, std::string srcAddr, const std::strin
     int nextInterfaceId = std::get<1>(ARPTable.at(nextHopAddr));
     if (!interfaces[nextInterfaceId].up) {
         std::cerr << red << "Cannot send to " << destAddr 
-            << ", it is an unreachable address." << color_reset << std::endl;
+            << ", it is an unreachable address. 2" << color_reset << std::endl;
         return;
     }
 

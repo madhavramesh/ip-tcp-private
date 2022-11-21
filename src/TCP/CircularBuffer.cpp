@@ -1,4 +1,5 @@
 #include <include/TCP/CircularBuffer.h>
+#include <iostream>
 
 TCPCircularBuffer::TCPCircularBuffer(int size) : data(size), start(1), next(1), last(0) {}
 
@@ -48,7 +49,9 @@ int TCPCircularBuffer::read(int numBytes, std::string& buf) {
 // Write numBytes starting from next position
 int TCPCircularBuffer::write(int numBytes, std::string& buf) {
     int numWritten = 0;
-    while (next != last && numWritten < numBytes) {
+    std::cout << "NEXT IS " << next << std::endl;
+    std::cout << "LAST IS " << last << std::endl;
+    while ((next != last + 1) && (numWritten < numBytes)) {
         data[next % data.capacity()] = buf[numWritten];
         next++;
         numWritten++;
@@ -56,24 +59,10 @@ int TCPCircularBuffer::write(int numBytes, std::string& buf) {
     return numWritten;
 }
 
-int TCPCircularBuffer::getNumBytes(int numBytes, std::string& buf) {
-    int tempNext = start;
-    int pos = 0;
-    while (tempNext != (last + 1) && pos < numBytes) {
-        buf[pos] = data[tempNext % data.capacity()];
-        tempNext++;
-        pos++;
-    }
-    next = tempNext;
-    return pos;
-}
-
 int TCPCircularBuffer::getWindowSize() {
     int afterLast = last + 1;
     if (start == afterLast) {
         return data.capacity();
-    } else if (start > afterLast) {
-        return start - afterLast;
     } else {
         return data.capacity() - (afterLast - start);
     }

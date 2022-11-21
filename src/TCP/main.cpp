@@ -82,6 +82,7 @@ int main(int argc, char *argv[]) {
     std::cout << "> ";
     while (std::getline(std::cin, text)) {
         try {
+            std::cout << "Attempt: " << text.size() << std::endl;
             repl.eval(text);
         } catch (std::exception& e) {
             std::cerr << red << "exception: " << e.what() << color_reset << std::endl;

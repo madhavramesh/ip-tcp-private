@@ -173,7 +173,7 @@ void TCPCommands::send(std::string& args) {
     // Parse the socket id and payload
     int prevSpaceIdx = -1;
     int spaceIdx = -1;
-    for (int i = 0; i < 2; i++) {
+    for (int i = 0; i < 1; i++) {
         prevSpaceIdx = spaceIdx + 1;
         spaceIdx = args.find(' ', prevSpaceIdx);
 
@@ -192,7 +192,7 @@ void TCPCommands::send(std::string& args) {
     }
 
     int socketId = stoi(parsedArgs[0]);
-    std::string payload = parsedArgs[1];
+    std::string payload = args.substr(spaceIdx + 1);
     std::cout << "your payload would be " << payload << std::endl;
 
     int numSent = tcpNode->write(socketId, payload);
@@ -255,9 +255,8 @@ void TCPCommands::recv(std::string& args) {
     std::string buf(bytesToRead, '\0');
     int bytesRead = tcpNode->read(socketId, buf, blocking);
 
-    std::cout << "read on " << buf.size() << "bytes returned " << bytesRead 
+    std::cout << "read on " << buf.size() << " bytes returned " << bytesRead 
         << "; contents of buffer: '" << buf << "'" << std::endl;
-
 }
 
 void TCPCommands::shutdown(std::string& args) {
