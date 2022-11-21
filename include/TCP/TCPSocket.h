@@ -15,7 +15,7 @@
 #include <chrono> 
 #include <mutex>
 #include <shared_mutex>
-#include <priority_queue>
+#include <queue>
 
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
@@ -47,6 +47,18 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         struct TCPPacket {
             std::shared_ptr<struct tcphdr> tcpHeader;
             std::string payload;
+
+            bool operator<(const TCPPacket& p) const
+            {
+                return tcpHeader->th_seq < p.tcpHeader->th_seq;
+            };
+        };
+
+        struct ComparePacketPtrs {
+            bool operator()(const std::shared_ptr<TCPPacket>& p1, const std::shared_ptr<TCPPacket>& p2)
+            {
+                return (*p1) < (*p2);
+            }
         };
         
         enum class SocketState {
@@ -149,6 +161,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         std::shared_ptr<struct TCPPacket> createTCPPacket(unsigned char flags, uint32_t seqNum, 
                 uint32_t ackNum, std::string payload);
         void addEarlyArrival(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload);
+        void handleEarlyArrivals();
 
         void retransmitPackets();
         void flushRetransmission();
@@ -165,6 +178,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             std::shared_ptr<struct tcphdr> tcp_header,
             std::string& payload
         );
+
 
     private:
         std::shared_ptr<IPNode> ipNode;
@@ -189,7 +203,10 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         uint32_t sendNext { 0 };
 
         // TCP Packets that were received out of order
-        std::priority_queue<std::shared_ptr<TCPPacket>> earlyArrivals;
+        std::priority_queue<
+            std::shared_ptr<TCPPacket>, 
+            std::vector<std::shared_ptr<TCPPacket>>, 
+            ComparePacketPtrs> earlyArrivals;
 
         // TODO: Potentially include both R1 and R2 timeouts
         // TODO: Dynamically calculate RTO
@@ -219,6 +236,8 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         std::deque<std::shared_ptr<TCPSocket>> completeConns;                   
         // SYN-RECEIVED state
         std::unordered_map<TCPTuple, std::shared_ptr<TCPSocket>> incompleteConns;  
+
+        void zeroWindowProbe();
 
         // Timer used after entering timed wait state
         std::chrono::time_point<std::chrono::steady_clock> timedWaitTime;

@@ -250,7 +250,7 @@ int TCPNode::read(int socket, std::string& buf, bool blocking) {
             // TODO: If blocking call, queue for processing (some kind of cond variable?)
             return sock->readRecvBuf(buf.size(), buf, blocking);
         case TCPSocket::SocketState::CLOSE_WAIT:
-            int numRead = sock->readRecvBuf(buf.size(), buf); 
+            int numRead = sock->readRecvBuf(buf.size(), buf, blocking); 
             if (numRead == 0) {
                 std::cerr << red << "error: connection closing" << color_reset << std::endl;
                 return -1;
@@ -363,7 +363,7 @@ void TCPNode::handleClient(
 
     // Check if listen socket exists
     std::shared_ptr<TCPSocket> sock = getSocket(socketTuple);
-    SocketState sockState = sock->getState();
+    TCPSocket::SocketState sockState = sock->getState();
     if (sock && sockState == TCPSocket::SocketState::LISTEN) {
         transitionFromListen(tcpHeader, payload, sock, socketTuple);
         // Only continue processing if SYN present
@@ -630,7 +630,7 @@ void TCPNode::trimPayload(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struc
 void TCPNode::transitionFromOtherRSTBit(std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
 
-    SocketState sockState = sock->getState();
+    TCPSocket::SocketState sockState = sock->getState();
     if (sockState == TCPSocket::SocketState::SYN_RECV) {
         // Delete TCB
         int socketId = socket_tuple_table[sock->toTuple()];
@@ -672,7 +672,7 @@ void TCPNode::transitionFromOtherRSTBit(std::shared_ptr<struct tcphdr> tcpHeader
 void TCPNode::transitionFromOtherSYNBit(std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
 
-    SocketState sockState = sock->getState();
+    TCPSocket::SocketState sockState = sock->getState();
     if (sockState == TCPSocket::SocketState::SYN_RECV) {
         // Delete TCB
         int socketId = socket_tuple_table[sock->toTuple()];
@@ -709,7 +709,7 @@ void TCPNode::transitionFromOtherSYNBit(std::shared_ptr<struct tcphdr> tcpHeader
 void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
 
-    SocketState sockState = sock->getState();
+    TCPSocket::SocketState sockState = sock->getState();
     tcp_seq ack = tcpHeader->th_ack;
     if (sockState == TCPSocket::SocketState::SYN_RECV) {
         if (sock->getUnack() < ack && ack <= sock->getSendNext()) {
@@ -834,7 +834,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
 void TCPNode::processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
 
-    SocketState sockState = sock->getState();
+    TCPSocket::SocketState sockState = sock->getState();
     if (sockState == TCPSocket::SocketState::ESTABLISHED || 
         sockState == TCPSocket::SocketState::FIN_WAIT1   ||
         sockState == TCPSocket::SocketState::FIN_WAIT2) {
@@ -846,7 +846,7 @@ void TCPNode::processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
                 int numWritten = sock->writeRecvBuf(payload.size(), payload);
 
                 // combine early arrivals if possible
-                handleEarlyArrivals();
+                sock->handleEarlyArrivals();
 
                 // send ack
                 // note, we don't have to worry about send window bc we are sending an empty payload
@@ -872,7 +872,7 @@ void TCPNode::processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
 void TCPNode::TCPNode::transitionFromOtherFINBit(std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
 
-    SocketState sockState = sock->getState();
+    TCPSocket::SocketState sockState = sock->getState();
     if (sockState == TCPSocket::SocketState::CLOSED || 
         sockState == TCPSocket::SocketState::LISTEN || 
         sockState == TCPSocket::SocketState::SYN_SENT) {

@@ -6,6 +6,7 @@
 #include <include/TCP/TCPSocket.h>
 #include <include/TCP/TCPTuple.h>
 #include <include/TCP/CircularBuffer.h>
+#include <include/tools/colors.h>
 
 TCPSocket::TCPSocket(std::string localAddr, uint16_t localPort, std::string remoteAddr, 
     uint16_t remotePort, std::shared_ptr<IPNode> ipNode) : 
@@ -41,7 +42,7 @@ void TCPSocket::setState(SocketState newState) {
     std::unique_lock<std::shared_mutex> lk(socketMutex);
     if (newState == SocketState::CLOSED) {
         if (state == SocketState::SYN_SENT) {
-            std::unique_lock<std::mutex> lkAccept(originator.acceptMutex);
+            std::unique_lock<std::mutex> lkAccept(originator->acceptMutex);
             originator->incompleteConns.erase(toTuple());
         } else if (state == SocketState::ESTABLISHED) {
             for (auto it = originator->completeConns.begin(); 
@@ -171,14 +172,14 @@ void TCPSocket::socket_listen() {
     unAck = 0;
     sendNext = 0;
 
-    outOfOrderQueue = {};
+    earlyArrivals = {};
     retransmitAttempts = 0;
     retransmissionActive = false;
     retransmissionQueue = {};
 
     recvBuffer = TCPCircularBuffer(RECV_WINDOW_SIZE);
 
-    std::unique_lock<std::mutex> lk(acceptMutex);
+    std::unique_lock<std::mutex> lkAccept(acceptMutex);
     incompleteConns = {};
     completeConns = {};
 }
@@ -194,7 +195,7 @@ std::shared_ptr<TCPSocket> TCPSocket::socket_accept() {
     completeConns.pop_front();
 
     // accepted socket now has no originator
-    accceptedSock->originator = nullptr;
+    acceptedSock->originator = nullptr;
     return acceptedSock;
 }
 
@@ -344,7 +345,7 @@ int TCPSocket::writeRecvBuf(int numBytes, std::string& payload) {
 void TCPSocket::addEarlyArrival(std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload) {
 
-    std::unique_lock<std::mutex> lk(socketMutex);
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
 
     std::shared_ptr<TCPPacket> packet = std::make_shared<TCPPacket>();
     packet->tcpHeader = tcpHeader;
@@ -358,7 +359,7 @@ void TCPSocket::handleEarlyArrivals() {
     std::unique_lock<std::shared_mutex> lkSocket(socketMutex);
 
     auto packet = earlyArrivals.top();
-    while (recvBuffer.getNext() >= calculateSegmentEnd(packet->tcpHeader, packet->payload) {
+    while (recvBuffer.getNext() >= calculateSegmentEnd(packet->tcpHeader, packet->payload)) {
         earlyArrivals.pop();
         packet = earlyArrivals.top();
     }
@@ -372,7 +373,7 @@ void TCPSocket::handleEarlyArrivals() {
 
         offset = recvBuffer.getNext() - packet->tcpHeader->th_seq;
         numToCopy = packet->payload.size() - offset;
-        buf = payload.substr(offset);
+        buf = packet->payload.substr(offset);
 
         numCopied = recvBuffer.write(numToCopy, buf);
         packet = earlyArrivals.top();
@@ -480,7 +481,7 @@ void TCPSocket::retransmitPackets() {
     }
 
     // Retransmit packets
-    sd::shared_lock lkShared(socketMutex);
+    std::shared_lock lkShared(socketMutex);
     flushRetransmission();
 }
 
@@ -489,9 +490,9 @@ void TCPSocket::flushRetransmission() {
         return;
     }
 
-    sd::shared_lock lkShared(socketMutex);
+    std::shared_lock lkShared(socketMutex);
     for (auto& packet : retransmissionQueue) {
-        std::string newPayload(sizeof(struct tcphdr) + payload.size(), '\0');
+        std::string newPayload(sizeof(struct tcphdr) + packet->payload.size(), '\0');
         memcpy(&newPayload[0], packet->tcpHeader.get(), sizeof(struct tcphdr));
         memcpy(&newPayload[sizeof(struct tcphdr)], &packet->payload[0], packet->payload.size());
 
@@ -509,10 +510,10 @@ void TCPSocket::zeroWindowProbe() {
         if (unAck >= segStart && unAck < segEnd) {
             char probeByte = packet->payload[unAck - segStart];
             auto zeroProbe = 
-                createTCPPacket(TH_ACK, sendNext, recvBuffer.getNext(), probeByte);
+                createTCPPacket(TH_ACK, sendNext, recvBuffer.getNext(), std::string(1, probeByte));
 
             std::string newPayload(sizeof(struct tcphdr) + 1, '\0');
-            memcpy(&newPayload[0], newTcpHeader.get(), sizeof(struct tcphdr));
+            memcpy(&newPayload[0], zeroProbe.get(), sizeof(struct tcphdr));
             newPayload[sizeof(struct tcphdr) + 1] = probeByte;
 
             ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
@@ -606,4 +607,9 @@ struct siphash_key TCPSocket::generateSecretKey() {
         key.key[1] = dis(rd_gen);
     });
     return key;
+}
+
+uint32_t TCPSocket::calculateSegmentEnd(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
+    int additionalByte = tcpHeader->th_flags & (TH_SYN | TH_FIN);
+    return tcpHeader->th_seq + payload.size() + additionalByte;
 }

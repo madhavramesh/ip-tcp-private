@@ -46,7 +46,7 @@ int TCPCircularBuffer::read(int numBytes, std::string& buf) {
 }
 
 // Write numBytes starting from next position
-int write(int numBytes, std::string& buf) {
+int TCPCircularBuffer::write(int numBytes, std::string& buf) {
     int numWritten = 0;
     while (next != last && numWritten < numBytes) {
         data[next % data.capacity()] = buf[numWritten];
