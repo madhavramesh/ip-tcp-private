@@ -345,7 +345,7 @@ void TCPNode::handleClient(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader, 
     std::string& payload) {
-
+    
     TCPTuple socketTuple = extractTCPTuple(ipHeader, tcpHeader);
 
     // ===================================================================================

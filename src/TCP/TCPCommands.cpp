@@ -49,12 +49,12 @@ TCPCommands::TCPCommands(std::shared_ptr<TCPNode> node) : tcpNode(node), IPComma
 // Prints out the socket information
 void TCPCommands::sockets(std::string& args) {
     // // Topmost column names
-    std::vector<std::string> colNames = { "socket", "local-addr", "port", "dst-addr", "port", "status"};
+    std::vector<std::string> colNames = { "socket", "local-addr", "local-port", "dest-addr", "dest-port", "status"};
 
     // // Print out top row
     std::ostringstream interfaceString;
     for (auto& colName : colNames) {
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << colName << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << colName;
     }
     interfaceString << std::endl;
 
@@ -71,12 +71,12 @@ void TCPCommands::sockets(std::string& args) {
         // TCPTuple socketTuple = socket->toTuple();
         // std::string state = TCPSocket::toString(socket->getState());
 
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << id << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getSrcAddr() << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getSrcPort() << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getDestAddr() << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getDestPort() << " ";
-        interfaceString << std::setw(INTERFACE_COL_SIZE) << state << " ";
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << id;
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getSrcAddr();
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getSrcPort();
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getDestAddr();
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << socketTuple.getDestPort();
+        interfaceString << std::setw(INTERFACE_COL_SIZE) << state;
         interfaceString << std::endl;
     }
 

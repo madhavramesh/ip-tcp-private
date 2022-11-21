@@ -452,7 +452,7 @@ void TCPSocket::retransmitPackets() {
 
     std::unique_lock<std::shared_mutex> lk(socketMutex);
 
-    std::chrono::milliseconds retransmitInterval(1000);
+    std::chrono::milliseconds retransmitInterval(DEFAULT_RTO);
     for (int i = 0; i < retransmitAttempts; i++) {
         retransmitInterval *= 2;
     }
