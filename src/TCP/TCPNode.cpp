@@ -150,7 +150,6 @@ int TCPNode::connect(std::string& address, uint16_t port) {
 
     std::shared_ptr<TCPSocket> sock = std::make_shared<TCPSocket>(srcAddr, srcPort, address, port, 
                                                                   ipNode);
-
     sock->socket_connect();
 
     // Add to socket descriptor table
@@ -399,6 +398,11 @@ void TCPNode::handleClient(
         sock->sendTCPPacket(tcpPacket) ;
         return;
     }
+
+    if (tcpHeader->th_seq > sock->getRecvNext()) {
+        sock->addEarlyArrival(tcpHeader, payload);
+        return;
+    }
     
     // Hold out of order segments for later processing
     if (tcpHeader->th_seq > sock->getRecvNext()) {
@@ -420,11 +424,13 @@ void TCPNode::handleClient(
 
     // 4) Check SYN bit
     if (tcpHeader->th_flags & TH_SYN) {
+        std::cout << "there is a syn bit" << std::endl;
         transitionFromOtherSYNBit(tcpHeader, payload, sock);
     }
 
      // 5) Check ACK bit
     if (tcpHeader->th_flags & TH_ACK) {
+        std::cout << "there is an ack bit" << std::endl;
         transitionFromOtherACKBit(ipHeader, tcpHeader, payload, sock);
 
         tcp_seq ack = tcpHeader->th_ack;
@@ -866,7 +872,7 @@ void TCPNode::processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
             auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), 
                                                     sock->getRecvNext(), "");
             sock->sendTCPPacket(tcpPacket);
-        }
+        } 
         // TODO: consider piggy backing
     }   
     

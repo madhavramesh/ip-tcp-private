@@ -645,6 +645,7 @@ struct siphash_key TCPSocket::generateSecretKey() {
     return key;
 }
 
+// This assumes header is in HOST byte order
 uint32_t TCPSocket::calculateSegmentEnd(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
     int additionalByte = !!(tcpHeader->th_flags & (TH_SYN | TH_FIN));
     return tcpHeader->th_seq + payload.size() + additionalByte;

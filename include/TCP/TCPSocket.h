@@ -77,7 +77,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             CLOSING,
             CLOSE_WAIT,
             LAST_ACK,
-            CLOSED,
+            CLOSED
         };
 
         static std::string toString(SocketState state) {
