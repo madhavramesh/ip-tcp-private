@@ -32,6 +32,9 @@ struct SockInfo {
     std::string state;
 };
 
+// type for shutdown
+enum ShutdownType { READ, WRITE, BOTH };
+
 class TCPNode {
     public:
 

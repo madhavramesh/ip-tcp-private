@@ -13,7 +13,7 @@
 #include <include/TCP/TCPNode.h>
 #include <include/TCP/TCPSocket.h>
 #include <include/tools/siphash.h>
-
+#include "include/TCP/TCPCommands.h"
 
 TCPNode::TCPNode(uint16_t port) : nextSockId(0), nextEphemeral(MIN_PORT), ipNode(std::make_shared<IPNode>(port)) {
 
@@ -226,6 +226,7 @@ int TCPNode::read(int socket, std::string& buf, int numBytes, bool blocking) {
     if (!sock->getAllowRead()) {
         // print out error msg
         std::cout << yellow << "read() error: Operation not permitted" << color_reset << std::endl;
+        return -1;
     }
 
     switch (sock->getState()) {
@@ -266,30 +267,35 @@ void TCPNode::shutdown(int socket, int type) {
     auto sockIt = sd_table.find(socket);
     if (sockIt == sd_table.end()) {
         std::cerr << red << "error: connection does not exist" << color_reset << std::endl;
-        // return -1;
         return;
     }
     std::shared_ptr<TCPSocket> sock = sockIt->second;
 
     switch (type) {
-        case 1: // Close writing part, send FIN 
-        {
-            auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
-            sock->sendTCPPacket(tcpPacket);
-            return;
-        }
-    
-        case 2: // Close reading part
-
+        case READ: // Close reading part
             // transition to CLOSE_WAIT
             sock->setAllowRead(false);
             return;
+        case WRITE: 
+            // Close writing part, send FIN 
+            {
+                auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
+                sock->sendTCPPacket(tcpPacket);
+                sock->setState(TCPSocket::SocketState::FIN_WAIT1);
+                return;
+            }
+        case BOTH: // Close both
+            // Do READ case
+            sock->setAllowRead(false);
 
-        case 3: // Close both
-            // go to fin wait 2? 
+            // Do WRITE case
+            auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
+            sock->sendTCPPacket(tcpPacket);
+            sock->setState(TCPSocket::SocketState::FIN_WAIT1);
             return;
 
         default:
+            std::cerror << "this should never be reached" << std::endl;
             return;
         
     }
@@ -297,8 +303,10 @@ void TCPNode::shutdown(int socket, int type) {
 
 
 void TCPNode::close(int socket) {
-    // "VClose implicitly does a VShutdown with both"
-    shutdown(socket, 3);
+    // From handout: "VClose implicitly does a VShutdown with both"
+
+    // 
+    shutdown(socket, BOTH);
     return;
 }
 
@@ -353,7 +361,6 @@ void TCPNode::handleClient(
     std::shared_ptr<struct ip> ipHeader, 
     std::shared_ptr<struct tcphdr> tcpHeader, 
     std::string& payload) {
-    std::cout << "handleClient" << std::endl;
     TCPTuple socketTuple = extractTCPTuple(ipHeader, tcpHeader);
 
     // ===================================================================================
@@ -400,11 +407,6 @@ void TCPNode::handleClient(
         sock->sendTCPPacket(tcpPacket) ;
         return;
     }
-
-    if (tcpHeader->th_seq > sock->getRecvNext()) {
-        sock->addEarlyArrival(tcpHeader, payload);
-        return;
-    }
     
     // Hold out of order segments for later processing
     if (tcpHeader->th_seq > sock->getRecvNext()) {
@@ -432,7 +434,6 @@ void TCPNode::handleClient(
 
      // 5) Check ACK bit
     if (tcpHeader->th_flags & TH_ACK) {
-        std::cout << "there is an ack bit" << std::endl;
         transitionFromOtherACKBit(ipHeader, tcpHeader, payload, sock);
 
         tcp_seq ack = tcpHeader->th_ack;
@@ -728,6 +729,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
     tcp_seq ack = tcpHeader->th_ack;
     if (sockState == TCPSocket::SocketState::SYN_RECV) {
         if (sock->getUnack() < ack && ack <= sock->getSendNext()) {
+            std::cout << "syn recv to est" << std::endl;
             sock->setState(TCPSocket::SocketState::ESTABLISHED);
             sock->setSendWnd(tcpHeader->th_win);
             sock->setSendWl1(tcpHeader->th_seq);
@@ -760,8 +762,10 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
         sockState == TCPSocket::SocketState::FIN_WAIT2   || 
         sockState == TCPSocket::SocketState::CLOSE_WAIT  ||
         sockState == TCPSocket::SocketState::CLOSING) {
+            std::cout << "est" << std::endl;
             // Update unAck, if needed
             if (sock->getUnack() < ack && ack <= sock->getSendNext()) { 
+                std::cout << "inside" << std::endl;
                 // If ACK follows within the window, then it is valid so update UNA
                 sock->setUnack(ack);
                 // Handle retransmission queue: remove those that have been acked

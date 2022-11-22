@@ -96,6 +96,7 @@ void TCPSocket::setRecvBufLast(uint32_t newRecvBufLast) {
 }
 
 void TCPSocket::setAllowRead(bool newAllowRead) {
+    std::cout << "set allow read to " << newAllowRead << std::endl;
     allowRead = newAllowRead;
 }
 
@@ -462,8 +463,6 @@ void TCPSocket::receiveTCPPacket(
             uint32_t segEnd = calculateSegmentEnd(packet->tcpHeader, packet->payload);
             packet->tcpHeader->th_seq = htonl(packet->tcpHeader->th_seq);
 
-            std::cout << "SEG END DS: " << segEnd << std::endl;
-            std::cout << "ACK DS: " << tcpHeader->th_ack << std::endl;
             if (segEnd <= tcpHeader->th_ack) {
                 retransmissionQueue.pop_front();
             } else {

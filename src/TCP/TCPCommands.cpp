@@ -256,22 +256,59 @@ void TCPCommands::recv(std::string& args) {
     std::string buf;
     int bytesRead = tcpNode->read(socketId, buf, bytesToRead, blocking);
 
-    std::cout << dim << "read on " << buf.size() << " bytes returned " << bytesRead 
+    if (bytesRead >= 0) {
+        std::cout << dim << "read on " << buf.size() << " bytes returned " << bytesRead 
         << "; contents of buffer: '" << buf << "'" << color_reset << std::endl;
+    }
 }
 
 void TCPCommands::shutdown(std::string& args) {
-    if (args.empty()) {
-        std::cerr << red << "usage: " << "shutdown " << shutdownParams << color_reset << std::endl;
-        return;
+     std::vector<std::string> parsedArgs;
+    // Parse the ip and port
+    int prevSpaceIdx = -1;
+    int spaceIdx = -1;
+    for (int i = 0; i < 2; i++) {
+        prevSpaceIdx = spaceIdx + 1;
+        spaceIdx = args.find(' ', prevSpaceIdx);
+
+        if (prevSpaceIdx == std::string::npos) {
+            std::cerr << red << "usage: " << "shutdown " << shutdownParams << color_reset << std::endl;
+        }
+        parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
     }
+
+    // Confirm that socket id is a digit
+    for (char c : parsedArgs[0]) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            return;
+        }
+    }
+
+    int socketId = stoi(parsedArgs[0]);
+
+    ShutdownType type = WRITE; // perhaps make these enums
+    if (spaceIdx != std::string::npos) {
+        prevSpaceIdx = spaceIdx + 1;
+        spaceIdx = args.find(' ', prevSpaceIdx);
+        std::string str = args.substr(prevSpaceIdx, spaceIdx);
+        if (str == "read") {
+            type = READ;
+        } else if (str == "write") {
+            type = WRITE;
+        } else if (str == "both") {
+            type = BOTH;
+        } else {
+            std::cerr << red << "syntax error: type must be 'read', 'write', or 'both'"
+                << color_reset << std::endl;
+            return;
+        }
+    }
+
+    tcpNode->shutdown(socketId, type);
 }
 
 void TCPCommands::close(std::string& args) {
-    if (args.empty()) {
-        std::cerr << red << "usage: " << "close " << closeParams << color_reset << std::endl;
-        return;
-    }
 
     /**
      * #TODO
