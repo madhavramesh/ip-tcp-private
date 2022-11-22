@@ -195,7 +195,7 @@ void TCPCommands::send(std::string& args) {
     std::string payload = args.substr(spaceIdx + 1);
     std::cout << "your payload would be " << payload << std::endl;
 
-    int numSent = tcpNode->write(socketId, payload);
+    int numSent = tcpNode->write(socketId, payload, payload.size());
     if (numSent < 0) {
         return;
     }
@@ -252,8 +252,8 @@ void TCPCommands::recv(std::string& args) {
         }
     }
 
-    std::string buf(bytesToRead, '\0');
-    int bytesRead = tcpNode->read(socketId, buf, blocking);
+    std::string buf;
+    int bytesRead = tcpNode->read(socketId, buf, bytesToRead, blocking);
 
     std::cout << "read on " << buf.size() << " bytes returned " << bytesRead 
         << "; contents of buffer: '" << buf << "'" << std::endl;
@@ -302,9 +302,7 @@ void TCPCommands::recvfile(std::string& args) {
 void TCPCommands::quit(std::string& args) {
     // int argc = 2;
     // char *argv[] = {"bonsai", "-l", NULL};
-    // // argv[1] = ;
     // runBonsai(argc, argv);
-    // // execv("third_party/bonsai", argv);
     exit(0);
 }
 

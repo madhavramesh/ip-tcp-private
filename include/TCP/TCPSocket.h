@@ -125,6 +125,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         void setIrs(uint32_t newIrs);
         void setRecvBufNext(uint32_t newRecvBufNext);
         void setRecvBufLast(uint32_t newRecvBufLast);
+        void setAllowRead(bool newAllowRead);
         void resetTimedWaitTime();
         
         SocketState getState();
@@ -138,6 +139,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         uint16_t getSendWnd();
         uint32_t getSendWl1();
         uint32_t getSendWl2();
+        bool getAllowRead();
         bool isActiveOpen();
         std::chrono::time_point<std::chrono::steady_clock> getTimedWaitTime();
 
@@ -190,7 +192,8 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         // ONLY used by passive open sockets 
         // Cleans up any data in listen socket if it exists
         std::shared_ptr<TCPSocket> originator { nullptr };
-
+        
+        std::atomic<bool> allowRead { true };
         bool activeOpen { false };
         SocketState state { SocketState::CLOSED };
         TCPTuple socketTuple;

@@ -15,7 +15,6 @@ TCPSocket::TCPSocket(std::string localAddr, uint16_t localPort, std::string remo
    recvBuffer(RECV_WINDOW_SIZE),
    retransmissionActive(false),
    lastRetransmitTime(std::chrono::steady_clock::now()) {
-    std::cout << "socket created with: " << localAddr << ":" << localPort << " -> " << remoteAddr << ":" << remotePort << std::endl;
    }
 
 TCPSocket::TCPSocket(const TCPTuple& otherTuple, std::shared_ptr<IPNode> ipNode) : 
@@ -95,6 +94,10 @@ void TCPSocket::setRecvBufLast(uint32_t newRecvBufLast) {
     recvBuffer.setLast(newRecvBufLast);
 }
 
+void TCPSocket::setAllowRead(bool newAllowRead) {
+    allowRead = newAllowRead;
+}
+
 void TCPSocket::resetTimedWaitTime() {
     std::unique_lock<std::shared_mutex> lk(socketMutex);
     timedWaitTime = std::chrono::steady_clock::now();
@@ -147,6 +150,10 @@ uint32_t TCPSocket::getSendWl1() {
 uint32_t TCPSocket::getSendWl2() {
     std::shared_lock<std::shared_mutex> lk(socketMutex);
     return sendWl2;
+}
+
+bool TCPSocket::getAllowRead() {
+    return allowRead.load();
 }
 
 bool TCPSocket::isActiveOpen() {
@@ -226,10 +233,10 @@ std::shared_ptr<TCPSocket::TCPPacket> TCPSocket::createTCPPacket(unsigned char f
     tcpHeader->th_off = 5;
     tcpHeader->th_sum = 0; 
     tcpHeader->th_urp = 0;
-    std::cout << "dest addr " << socketTuple.getDestAddr() << std::endl;
-    std::cout << "dest port " << socketTuple.getDestPort() << std::endl;
-    std::cout << "src addr " << socketTuple.getSrcAddr() << std::endl;
-    std::cout << "src port " << socketTuple.getSrcPort() << std::endl;
+    // std::cout << "dest addr " << socketTuple.getDestAddr() << std::endl;
+    // std::cout << "dest port " << socketTuple.getDestPort() << std::endl;
+    // std::cout << "src addr " << socketTuple.getSrcAddr() << std::endl;
+    // std::cout << "src port " << socketTuple.getSrcPort() << std::endl;
     // Compute checksum
     uint32_t srcIp = inet_addr(socketTuple.getSrcAddr().c_str());
     uint32_t destIp = inet_addr(socketTuple.getDestAddr().c_str());
@@ -256,13 +263,10 @@ void TCPSocket::socket_connect() {
     irs = 0;
     unAck = iss;
     sendNext = iss;
-    std::cout << "BLAH SYN SENT INITIAL UNACK: " << unAck << std::endl;
-    std::cout << "BLAH SYN SENT INITIAL SENDNEXT: " << sendNext << std::endl;
-
+    
     lk.unlock();
 
     // Create TCP packet and send SYN 
-    std::cout << "sock conn" << std::endl;
     auto tcpPacket = createTCPPacket(TH_SYN, iss, 0, "");
     sendTCPPacket(tcpPacket);
 }
@@ -270,8 +274,6 @@ void TCPSocket::socket_connect() {
 std::shared_ptr<TCPSocket> TCPSocket::addIncompleteConnection(std::shared_ptr<struct tcphdr> tcpHeader, 
         TCPTuple& socketTuple) {
         
-        std::cout << "Adding incomplete connection" << std::endl;
-
     // Set up new client socket
     std::shared_ptr<TCPSocket> newSock = std::make_shared<TCPSocket>(
             socketTuple.getSrcAddr(), socketTuple.getSrcPort(), socketTuple.getDestAddr(), 
@@ -292,8 +294,8 @@ std::shared_ptr<TCPSocket> TCPSocket::addIncompleteConnection(std::shared_ptr<st
     newSock->irs = tcpHeader->th_seq;
     newSock->unAck = newSock->iss;
     newSock->sendNext = newSock->iss;
-    std::cout << "UNACK INITIAL: " << newSock->unAck << std::endl;
-    std::cout << "SEND NEXT INITIAL: " << newSock->sendNext << std::endl;
+    // std::cout << "UNACK INITIAL: " << newSock->unAck << std::endl;
+    // std::cout << "SEND NEXT INITIAL: " << newSock->sendNext << std::endl;
 
     newSock->recvBuffer.initializeWith(tcpHeader->th_seq);
 
@@ -328,24 +330,19 @@ void TCPSocket::moveToCompleteConnection(std::shared_ptr<TCPSocket> sock) {
  * @return int 
  */
 int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
-    buf.resize(numBytes);
 
     std::unique_lock<std::mutex> lk(readMutex);
-    std::shared_lock<std::shared_mutex> lkSocket(socketMutex);
+    int readSoFar = recvBuffer.read(numBytes, buf);
+    if (!blocking && readSoFar > 0) {
+        return readSoFar;
+    }
 
-    int readSoFar = 0;
-    auto copyTo = buf.begin();
     while (readSoFar < numBytes) {
-        std::string tempBuf(numBytes - readSoFar, '\0');
-        readSoFar += recvBuffer.read(numBytes - readSoFar, tempBuf);
-        copyTo = std::copy(tempBuf.begin(), tempBuf.end(), copyTo);
-
-        if (!blocking && readSoFar > 0) {
-            break;
-        }
         // Must block on condition variable
         readCond.wait(lk);
-
+        readSoFar += recvBuffer.read(numBytes - readSoFar, buf);
+        
+        std::shared_lock<std::shared_mutex> lkSocket(socketMutex);
         if (state != TCPSocket::SocketState::ESTABLISHED &&
             state != TCPSocket::SocketState::FIN_WAIT1 && 
             state != TCPSocket::SocketState::FIN_WAIT2) {
@@ -353,6 +350,7 @@ int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
                 << color_reset << std::endl;
             break;
         }
+        lkSocket.unlock();
     }
 
     return readSoFar;
@@ -418,12 +416,12 @@ void TCPSocket::sendTCPPacket(std::shared_ptr<TCPSocket::TCPPacket>& tcpPacket) 
     memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
 
     // Check if sequence number is within receiver's window
-    std::cout << "SEQ: " << ntohl(tcpHeader->th_seq) << std::endl;
-    std::cout << "UNACK: " << unAck << std::endl;
-    std::cout << "SEND WND: " << sendWnd << std::endl;
+    // std::cout << "SEQ: " << ntohl(tcpHeader->th_seq) << std::endl;
+    // std::cout << "UNACK: " << unAck << std::endl;
+    // std::cout << "SEND WND: " << sendWnd << std::endl;
     if (ntohl(tcpHeader->th_seq) < unAck + sendWnd) {
         // // Call IP's send method to send packet
-        std::cout << "tcp dest addr " << socketTuple.getDestAddr() << std::endl;
+        // std::cout << "tcp dest addr " << socketTuple.getDestAddr() << std::endl;
         ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
                         TCP_PROTOCOL_NUMBER); 
     }
