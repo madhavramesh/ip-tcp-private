@@ -430,7 +430,6 @@ void TCPNode::handleClient(
 
      // 5) Check ACK bit
     if (tcpHeader->th_flags & TH_ACK) {
-        std::cout << "there is an ack bit" << std::endl;
         transitionFromOtherACKBit(ipHeader, tcpHeader, payload, sock);
 
         tcp_seq ack = tcpHeader->th_ack;
