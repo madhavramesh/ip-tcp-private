@@ -172,7 +172,7 @@ void IPNode::sendMsg(std::string destAddr, std::string srcAddr, const std::strin
     
     // Check if destination address exists in the routing table
     // Useful if routing table entry expires
-    std::cout << "destAddr: " << destAddr << std::endl;
+    // std::cout << "destAddr: " << destAddr << std::endl;
     std::string nextHopAddr;
     int cost;
     std::chrono::time_point<std::chrono::steady_clock> time;

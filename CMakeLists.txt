@@ -20,7 +20,7 @@ set(SOURCES src/TCP/main.cpp src/TCP/TCPCommands.cpp src/TCP/TCPSocket.cpp
 
 # add subdirectories
 add_subdirectory(utils)
-# add_subdirectory(third_party)
+add_subdirectory(third_party)
 
 add_executable(node ${SOURCES})
 # target_link_libraries(node pthread bonsai utilities ${Boost_LIBRARIES})
