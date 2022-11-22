@@ -262,19 +262,22 @@ void TCPCommands::recv(std::string& args) {
     }
 }
 
-void TCPCommands::shutdown(std::string& args) {
-    std::vector<std::string> parsedArgs;
-    int prevSpaceIdx = -1;
-    int spaceIdx = -1;
-    for (int i = 0; i < 2; i++) {
-        prevSpaceIdx = spaceIdx + 1;
-        spaceIdx = args.find(' ', prevSpaceIdx);
-
-        if (prevSpaceIdx == std::string::npos) {
-            std::cerr << red << "usage: " << "shutdown " << shutdownParams << color_reset << std::endl;
-        }
-        parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
+std::vector<std::string> TCPCommands::splitString(std::string& str, std::string delimiter)
+{
+    std::vector<std::string> ret;
+    int start = 0;
+    int end = str.find(delimiter);
+    while (end != -1) {
+        ret.push_back(str.substr(start, end - start));
+        start = end + delimiter.size();
+        end = str.find(delimiter, start);
     }
+    ret.push_back(str.substr(start, end - start));
+    return ret;
+}
+
+void TCPCommands::shutdown(std::string& args) {
+    std::vector<std::string> parsedArgs = splitString(args, " ");
 
     // Confirm that socket id is a digit
     for (char c : parsedArgs[0]) {
@@ -285,10 +288,10 @@ void TCPCommands::shutdown(std::string& args) {
     }
 
     int socketId = stoi(parsedArgs[0]);
-    std::string shutdownStr = parsedArgs[1];
-
     ShutdownType type = WRITE; // perhaps make these enums
-    if (spaceIdx != std::string::npos) {
+
+    if (parsedArgs.size() == 2) {
+        std::string shutdownStr = parsedArgs[1];
         if (shutdownStr == "read") {
             type = READ;
         } else if (shutdownStr == "write") {
@@ -298,10 +301,10 @@ void TCPCommands::shutdown(std::string& args) {
         } else {
             std::cerr << red << "syntax error: type must be 'read', 'write', or 'both'"
                 << color_reset << std::endl;
-            return;
+        return;
         }
-    }
-
+    }   
+    std::cout << "the type is " << type << std::endl;
     tcpNode->shutdown(socketId, type);
 }
 

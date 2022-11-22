@@ -96,6 +96,7 @@ void TCPSocket::setRecvBufLast(uint32_t newRecvBufLast) {
 }
 
 void TCPSocket::setAllowRead(bool newAllowRead) {
+    std::unique_lock<std::shared_mutex> lk(socketMutex);
     allowRead = newAllowRead;
     std::cout << "Setting to " << newAllowRead << std::endl;
     readCond.notify_one();

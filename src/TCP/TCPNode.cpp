@@ -283,6 +283,7 @@ void TCPNode::shutdown(int socket, int type) {
     std::shared_ptr<TCPSocket> sock = sockIt->second;
 
     // std::shared_lock<std::shared_mutex> lk(sock->socketMutex);
+    std::cout << "type is " << type << std::endl;
 
     switch (type) {
         case READ: // Close reading part
@@ -291,7 +292,7 @@ void TCPNode::shutdown(int socket, int type) {
             return;
         case WRITE: 
             // Close writing part, send FIN 
-            std::cout << "Shutting down read " << std::endl;
+            std::cout << "Shutting down write " << std::endl;
             {
                 auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
                 sock->sendTCPPacket(tcpPacket);

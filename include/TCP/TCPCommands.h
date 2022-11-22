@@ -48,6 +48,6 @@ class TCPCommands : public IPCommands {
 
     private:
         std::shared_ptr<TCPNode> tcpNode;
-
+        std::vector<std::string> splitString(std::string& str, std::string delimiter);
         void accept_loop(int sockClient, int sockListener, std::string address);
 };
