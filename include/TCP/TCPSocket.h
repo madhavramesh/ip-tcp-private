@@ -94,6 +94,8 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
                     return "FIN_WAIT1";
                 case SocketState::FIN_WAIT2:
                     return "FIN_WAIT2";
+                case SocketState::TIME_WAIT:
+                    return "TIME_WAIT";
                 case SocketState::CLOSING:
                     return "CLOSING";
                 case SocketState::CLOSE_WAIT:

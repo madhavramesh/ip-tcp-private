@@ -236,7 +236,7 @@ int TCPNode::read(int socket, std::string& buf, int numBytes, bool blocking) {
 
     if (!sock->getAllowRead()) {
         // print out error msg
-        std::cout << yellow << "read() error: Operation not permitted" << color_reset << std::endl;
+        std::cout << red << "read() error: Operation not permitted" << color_reset << std::endl;
         return -1;
     }
 
@@ -293,23 +293,14 @@ void TCPNode::shutdown(int socket, int type) {
         case WRITE: 
             // Close writing part, send FIN 
             std::cout << "Shutting down write " << std::endl;
-            {
-                auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
-                sock->sendTCPPacket(tcpPacket);
-                sock->setState(TCPSocket::SocketState::FIN_WAIT1);
-            }
+            close(socket);
             return;
         case BOTH: // Close both
             std::cout << "Shutting down both " << std::endl;
-            {
-                // Do READ case 
-                sock->setAllowRead(false);
-
-                // Do WRITE case
-                auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
-                sock->sendTCPPacket(tcpPacket);
-                sock->setState(TCPSocket::SocketState::FIN_WAIT1);
-            }
+            // Do READ case 
+            sock->setAllowRead(false);
+            // Do WRITE case
+            close(socket);
             return;
         default:
             std::cerr << red << "error: this should never be reached" << color_reset << std::endl;
@@ -342,19 +333,25 @@ void TCPNode::close(int socket) {
             return;
         case TCPSocket::SocketState::SYN_RECV:
         case TCPSocket::SocketState::ESTABLISHED:
-            sock->flushRetransmission();
-            shutdown(socket, BOTH);
+            {
+                sock->flushRetransmission();
+                auto tcpPacket = sock->createTCPPacket(TH_FIN | TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
+                sock->sendTCPPacket(tcpPacket);
+                sock->setState(TCPSocket::SocketState::FIN_WAIT1);
+            }
+            return;
         case TCPSocket::SocketState::FIN_WAIT1:
         case TCPSocket::SocketState::FIN_WAIT2: 
             std::cerr << red << "error: connection closing" << color_reset << std::endl;
             return;
-        case TCPSocket::SocketState::CLOSE_WAIT: {
-            sock->flushRetransmission();
-            auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
-            sock->sendTCPPacket(tcpPacket);
-            sock->setState(TCPSocket::SocketState::LAST_ACK);
+        case TCPSocket::SocketState::CLOSE_WAIT: 
+            {
+                sock->flushRetransmission();
+                auto tcpPacket = sock->createTCPPacket(TH_FIN | TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
+                sock->sendTCPPacket(tcpPacket);
+                sock->setState(TCPSocket::SocketState::LAST_ACK);
+            }
             return;
-        }
         case TCPSocket::SocketState::CLOSING:
         case TCPSocket::SocketState::LAST_ACK:
         case TCPSocket::SocketState::TIME_WAIT:
@@ -507,7 +504,9 @@ void TCPNode::handleClient(
     // Not doing for now
 
     // 7) Process segment text
-    processSegmentText(tcpHeader, payload, sock);
+    if (payload.size() > 0) {
+        processSegmentText(tcpHeader, payload, sock);
+    }
         
     // 8) Check FIN bit
     if (tcpHeader->th_flags & TH_FIN) {
@@ -867,7 +866,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
                 // if the retransmission queue is empty, 
                 // the user's CLOSE can be acknowledged ("ok") but do not delete the TCB.
                 if (sock->retransmissionQueueEmpty()) {
-                    std::cout << "ok" << std::endl;
+                    std::cout << dim << "shutdown() returned 0" << color_reset << std::endl;
                 }
             }
 
