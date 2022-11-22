@@ -56,6 +56,9 @@ std::vector<SockInfo> TCPNode::getSockets() {
 }
 
 void TCPNode::deleteSocket(TCPTuple socketTuple) {
+    if (!socket_tuple_table.count(socketTuple)) {
+        return;
+    }
     int socketId = socket_tuple_table[socketTuple];
     std::shared_ptr<TCPSocket> sock = sd_table[socketId];
 
@@ -271,6 +274,8 @@ void TCPNode::shutdown(int socket, int type) {
     }
     std::shared_ptr<TCPSocket> sock = sockIt->second;
 
+    // std::shared_lock<std::shared_mutex> lk(sock->socketMutex);
+
     switch (type) {
         case READ: // Close reading part
             // transition to CLOSE_WAIT
@@ -285,17 +290,19 @@ void TCPNode::shutdown(int socket, int type) {
                 return;
             }
         case BOTH: // Close both
-            // Do READ case
-            sock->setAllowRead(false);
+            // Do READ case 
+            {
+                sock->setAllowRead(false);
 
-            // Do WRITE case
-            auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
-            sock->sendTCPPacket(tcpPacket);
-            sock->setState(TCPSocket::SocketState::FIN_WAIT1);
-            return;
+                // Do WRITE case
+                auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
+                sock->sendTCPPacket(tcpPacket);
+                sock->setState(TCPSocket::SocketState::FIN_WAIT1);
+                return;
+            }
 
         default:
-            std::cerror << "this should never be reached" << std::endl;
+            std::cerr << "this should never be reached" << std::endl;
             return;
         
     }
@@ -304,10 +311,50 @@ void TCPNode::shutdown(int socket, int type) {
 
 void TCPNode::close(int socket) {
     // From handout: "VClose implicitly does a VShutdown with both"
+    
+    // Closed state
+    auto sockIt = sd_table.find(socket);
+    if (sockIt == sd_table.end()) {
+        std::cerr << red << "error: connection does not exist" << color_reset << std::endl;
+        return;
+    }
+    std::shared_ptr<TCPSocket> sock = sockIt->second;
+    // std::shared_lock<std::shared_mutex> lk(sock->socketMutex);
 
-    // 
-    shutdown(socket, BOTH);
-    return;
+    TCPSocket::SocketState state = sock->getState();
+
+    switch (state) {
+        case TCPSocket::SocketState::CLOSED:
+            std::cerr << red << "error: connection does not exist" << color_reset << std::endl;
+            return;
+        case TCPSocket::SocketState::LISTEN:
+        case TCPSocket::SocketState::SYN_SENT: 
+            deleteSocket(sock->toTuple());
+            return;
+        case TCPSocket::SocketState::SYN_RECV:
+        case TCPSocket::SocketState::ESTABLISHED:
+            sock->flushRetransmission();
+            shutdown(socket, BOTH);
+        case TCPSocket::SocketState::FIN_WAIT1:
+        case TCPSocket::SocketState::FIN_WAIT2: 
+            std::cerr << red << "error: connection closing" << color_reset << std::endl;
+            return;
+        case TCPSocket::SocketState::CLOSE_WAIT: {
+            sock->flushRetransmission();
+            auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
+            sock->sendTCPPacket(tcpPacket);
+            sock->setState(TCPSocket::SocketState::LAST_ACK);
+            return;
+        }
+        case TCPSocket::SocketState::CLOSING:
+        case TCPSocket::SocketState::LAST_ACK:
+        case TCPSocket::SocketState::TIME_WAIT:
+            std::cerr << red << "error: connection closing" << color_reset << std::endl;
+            return;
+        default:
+            std::cerr << red << "error: unknown state reached" << color_reset << std::endl;
+            return;
+    }
 }
 
 void TCPNode::retransmitPackets() {

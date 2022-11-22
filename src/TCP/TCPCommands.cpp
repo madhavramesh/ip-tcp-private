@@ -263,8 +263,7 @@ void TCPCommands::recv(std::string& args) {
 }
 
 void TCPCommands::shutdown(std::string& args) {
-     std::vector<std::string> parsedArgs;
-    // Parse the ip and port
+    std::vector<std::string> parsedArgs;
     int prevSpaceIdx = -1;
     int spaceIdx = -1;
     for (int i = 0; i < 2; i++) {
@@ -309,17 +308,30 @@ void TCPCommands::shutdown(std::string& args) {
 }
 
 void TCPCommands::close(std::string& args) {
+    std::vector<std::string> parsedArgs;
+    int prevSpaceIdx = -1;
+    int spaceIdx = -1;
+    for (int i = 0; i < 2; i++) {
+        prevSpaceIdx = spaceIdx + 1;
+        spaceIdx = args.find(' ', prevSpaceIdx);
 
-    /**
-     * #TODO
-     * - if no access to socket, throw error
-     * - if in syn-received states, don't close until all things needed to be sent are sent
-     * i.e., last sent = last written
-     * - if established, send rest of buffer, send fin, enter fin-wait-1
-     * - if in fin-wait-2, don't send out anything
-     * - if in closed-wait, do same thing as in established
-     * - if in timed-wait, return an error
-     */
+        if (prevSpaceIdx == std::string::npos) {
+            std::cerr << red << "usage: " << "close " << closeParams << color_reset << std::endl;
+        }
+        parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
+    }
+
+    // Confirm that socket id is a digit
+    for (char c : parsedArgs[0]) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            return;
+        }
+    }
+
+    int socketId = stoi(parsedArgs[0]);
+
+    tcpNode->close(socketId);
 }
 
 void TCPCommands::sendfile(std::string& args) {
