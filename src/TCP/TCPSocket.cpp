@@ -340,6 +340,10 @@ int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
         readCond.wait(lk);
         readSoFar += recvBuffer.read(numBytes - readSoFar, buf);
 
+        if (!blocking && readSoFar > 0) {
+            return readSoFar;
+        }
+
         std::shared_lock<std::shared_mutex> lkSocket(socketMutex);
         if (state != TCPSocket::SocketState::ESTABLISHED &&
             state != TCPSocket::SocketState::FIN_WAIT1 && 

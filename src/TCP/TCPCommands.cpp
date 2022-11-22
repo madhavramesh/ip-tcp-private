@@ -215,7 +215,7 @@ void TCPCommands::recv(std::string& args) {
         spaceIdx = args.find(' ', prevSpaceIdx);
 
         if (prevSpaceIdx == std::string::npos) {
-            std::cerr << red << "usage: " << "send " << connectParams << color_reset << std::endl;
+            std::cerr << red << "usage: " << "recv " << recvParams << color_reset << std::endl;
         }
         parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
     }
@@ -223,7 +223,7 @@ void TCPCommands::recv(std::string& args) {
     // Confirm that socket id is a digit
     for (char c : parsedArgs[0]) {
         if (!isdigit(c)) {
-            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            std::cerr << red << "usage: " << "recv " << recvParams << color_reset << std::endl;
             return;
         }
     }
@@ -232,7 +232,7 @@ void TCPCommands::recv(std::string& args) {
     // Confirm that number of bytes to read is a digit
     for (char c : parsedArgs[1]) {
         if (!isdigit(c)) {
-            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            std::cerr << red << "usage: " << "recv " << recvParams << color_reset << std::endl;
             return;
         }
     }
@@ -279,7 +279,7 @@ void TCPCommands::shutdown(std::string& args) {
     // Confirm that socket id is a digit
     for (char c : parsedArgs[0]) {
         if (!isdigit(c)) {
-            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            std::cerr << red << "usage: " << "close " << closeParams << color_reset << std::endl;
             return;
         }
     }
@@ -324,7 +324,7 @@ void TCPCommands::close(std::string& args) {
     // Confirm that socket id is a digit
     for (char c : parsedArgs[0]) {
         if (!isdigit(c)) {
-            std::cerr << red << "usage: " << "send " << sendParams << color_reset << std::endl;
+            std::cerr << red << "usage: " << "close " << closeParams << color_reset << std::endl;
             return;
         }
     }
@@ -377,7 +377,7 @@ void TCPCommands::recvfile(std::string& args) {
         spaceIdx = args.find(' ', prevSpaceIdx);
 
         if (prevSpaceIdx == std::string::npos) {
-            std::cerr << red << "usage: " << "sf " << sendfileParams << color_reset << std::endl;
+            std::cerr << red << "usage: " << "rf " << recvfileParams << color_reset << std::endl;
         }
         parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
     }

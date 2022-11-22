@@ -414,7 +414,7 @@ void TCPNode::handleClient(
     std::shared_ptr<struct tcphdr> tcpHeader, 
     std::string& payload) {
     TCPTuple socketTuple = extractTCPTuple(ipHeader, tcpHeader);
-
+    std::cout << "handle message" << std::endl;
     // ===================================================================================
     // CLOSED
     // ===================================================================================
@@ -1121,17 +1121,17 @@ void TCPNode::rf(std::string& filename, int port) {
     // #todo make this non blocking 
 
     // Create listener
-    int sd = this->listen(filename, port);
-    if (sd == -1) {
+    int listenSock = this->listen(filename, port);
+    if (listenSock == -1) {
         std::cerr << red << "error: could not listen on port " << port << color_reset << std::endl;
         return;
     }
 
     // Accept connection
     std::string address;
-    int res = this->accept(sd, address);
-    if (res == -1) {
-        std::cerr << red << "error: could not accept connection on socket " << sd << color_reset << std::endl;
+    int connSock = this->accept(listenSock, address);
+    if (connSock == -1) {
+        std::cerr << red << "error: could not accept connection on socket " << listenSock << color_reset << std::endl;
         return;
     }
 
@@ -1141,13 +1141,18 @@ void TCPNode::rf(std::string& filename, int port) {
         std::cerr << red << "error: could not open file " << filename << color_reset << std::endl;
         return;
     }
-    std::cout << "receiving file " << filename << " from " << address << std::endl;
 
+    std::cout << "receiving file " << filename << " from " << address << std::endl;
     std::string buffer;
+    int totalBytes = 0;
     int bytesTransferred;
-    while ((bytesTransferred = this->read(sd, buffer, 65535, false)) > 0) {
+
+    while ((bytesTransferred = this->read(connSock, buffer, 65535, false)) > 0) {
         file.write(buffer.c_str(), bytesTransferred);
+        totalBytes += bytesTransferred;
     }
+    
+    std::cout << "i received: " << buffer << std::endl;
     file.seekp(0, std::ios::end);
     file.write(buffer.c_str(), bytesTransferred);
     std::cout << "file received: " << file.tellp() << " bytes transferred" << std::endl;
