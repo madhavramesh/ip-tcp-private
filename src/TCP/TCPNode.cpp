@@ -52,19 +52,9 @@ std::vector<SockInfo> TCPNode::getSockets() {
         SockInfo sockInfo = {
             id, sock->toTuple(), TCPSocket::toString(sock->getState())
         };
-        // sockInfo.id = id;   
-        // sockInfo.tuple = sock.toTuple();
-        // sockInfo.state = sock.getState();
         sockInfoVec.push_back(sockInfo);
     }
     return sockInfoVec;
-
-    // std::vector<std::pair<int, TCPSocket>> sd_table_copy;
-    // for (auto [id, sock] : sd_table) {
-    //     std::pair<int, TCPSocket> pair = std::make_pair(id, *sock);
-    //     sd_table_copy.insert(pair); // #TODO COME BACK TO THIS
-    // }
-    // return sd_table_copy;
 }
 
 void TCPNode::deleteSocket(TCPTuple socketTuple) {
@@ -168,14 +158,11 @@ int TCPNode::connect(std::string& address, uint16_t port) {
     sd_table.insert(std::make_pair(socketId, sock));
     socket_tuple_table.insert(std::make_pair(sock->toTuple(), socketId));
 
-    // TODO: SHOULD I BE LOCKING sd_table HERE?
     sock->socket_connect();
     return socketId;
 }
 
-int TCPNode::write(int socket, std::string& buf) {
-    // TODO: handle splitting packets i.e. less than max tcp packet size
-
+int TCPNode::write(int socket, std::string& buf, int numBytes) {
     // Check if socket descriptor exists
     auto sockIt = sd_table.find(socket);
     if (sockIt == sd_table.end()) {
@@ -196,15 +183,16 @@ int TCPNode::write(int socket, std::string& buf) {
             return -1;
         case TCPSocket::SocketState::ESTABLISHED:
         case TCPSocket::SocketState::CLOSE_WAIT:
-            for (int i = 0; i < buf.size(); i += MAX_TRANSMIT_UNIT) {
-                std::string payload = buf.substr(i, MAX_TRANSMIT_UNIT);
-                std::cout << "1" << std::endl;
+            for (int i = 0; i < ((numBytes / MAX_TRANSMIT_UNIT) + 1); i++) {
+                int start = i * MAX_TRANSMIT_UNIT;
+                int end = std::min(numBytes, start + MAX_TRANSMIT_UNIT);
+                std::string payload = buf.substr(i, end - start);
+
                 auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), 
                                                        sock->getRecvNext(), payload);
                 sock->sendTCPPacket(tcpPacket);
             }
-
-            return buf.size();
+            return numBytes;
         case TCPSocket::SocketState::FIN_WAIT1:
         case TCPSocket::SocketState::FIN_WAIT2:
         case TCPSocket::SocketState::CLOSING:
@@ -227,7 +215,9 @@ int TCPNode::write(int socket, std::string& buf) {
  * @param buf 
  * @return int 
  */
-int TCPNode::read(int socket, std::string& buf, bool blocking) {
+int TCPNode::read(int socket, std::string& buf, int numBytes, bool blocking) {
+    buf.clear();
+
     // Find socket
     auto sockIt = sd_table.find(socket);
     if (sockIt == sd_table.end()) {
@@ -249,9 +239,9 @@ int TCPNode::read(int socket, std::string& buf, bool blocking) {
         case TCPSocket::SocketState::FIN_WAIT1:
         case TCPSocket::SocketState::FIN_WAIT2: {
             // TODO: If blocking call, queue for processing (some kind of cond variable?)
-            return sock->readRecvBuf(buf.size(), buf, blocking);
+            return sock->readRecvBuf(numBytes, buf, blocking);
         case TCPSocket::SocketState::CLOSE_WAIT:
-            int numRead = sock->readRecvBuf(buf.size(), buf, blocking); 
+            int numRead = sock->readRecvBuf(numBytes, buf, blocking); 
             if (numRead == 0) {
                 std::cerr << red << "error: connection closing" << color_reset << std::endl;
                 return -1;
@@ -303,10 +293,16 @@ void TCPNode::close(int socket) {
 
 void TCPNode::retransmitPackets() {
     while (true) {
-        for (auto& [_, sock] : sd_table) {
-            // #todo re enable!
+        // for (auto it = sd_table.cbegin(); it != sd_table.cend();) {
+            // auto sock = it->second;
+            // it++;
             // sock->retransmitPackets();
-        }
+//
+            // TCPSocket::SocketState sockState = sock->getState();
+            // if (sockState == TCPSocket::SocketState::CLOSED) {
+                // deleteSocket(sock->toTuple());
+            // }
+        // }
     }
 }
 
@@ -859,7 +855,6 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
             // acknowledgment of our FIN. If our FIN is now acknowledged, 
             // delete the TCB, enter the CLOSED state, and return.
             if (ack == sock->getSendNext()) { 
-                sock->setState(TCPSocket::SocketState::CLOSED);
                 deleteSocket(sock->toTuple());
                 return;
             }
@@ -1040,20 +1035,20 @@ void TCPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& paylo
     std::shared_ptr<struct tcphdr> tcpHeader = std::make_shared<struct tcphdr>();
     memcpy(tcpHeader.get(), &payload[0], sizeof(struct tcphdr));
 
-    std::string remainingPayload = payload.substr(sizeof(tcphdr));
+    std::string remainingPayload = payload.substr(sizeof(struct tcphdr));
 
     // Validate checksum
     uint16_t prevCheckSum = tcpHeader->th_sum;
     tcpHeader->th_sum = 0;
 
-    uint16_t srcIP = ipHeader->ip_src.s_addr;
-    uint16_t destIP = ipHeader->ip_dst.s_addr;
+    uint32_t srcIP = ipHeader->ip_src.s_addr;
+    uint32_t destIP = ipHeader->ip_dst.s_addr;
     // #todo fix this
-    // if (TCPSocket::computeTCPChecksum(srcIP, destIP, tcpHeader, remainingPayload) != 
-    //     prevCheckSum) {
-    //         std::cout << "checksum wrong" << std::endl;
-    //         return;
-    // }
+    if (TCPSocket::computeTCPChecksum(srcIP, destIP, tcpHeader, remainingPayload) !=
+        prevCheckSum) {
+            std::cout << "checksum wrong" << std::endl;
+            return;
+    }
     tcpHeader->th_sum = prevCheckSum;
 
     receive(ipHeader, tcpHeader, remainingPayload);

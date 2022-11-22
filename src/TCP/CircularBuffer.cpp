@@ -35,15 +35,13 @@ void TCPCircularBuffer::initializeWith(int n) {
 
 // Read only from start
 int TCPCircularBuffer::read(int numBytes, std::string& buf) {
-    buf.resize(numBytes);
-
-    int insertPos = 0;
-    while (start != next && insertPos < numBytes) {
-        buf[insertPos] = data[start % data.capacity()];
+    int bytesRead = 0;
+    while (start != next && bytesRead < numBytes) {
+        buf.push_back(data[start % data.capacity()]);
         start++;
-        insertPos++;
+        bytesRead++;
     }
-    return insertPos;
+    return bytesRead;
 }
 
 // Write numBytes starting from next position

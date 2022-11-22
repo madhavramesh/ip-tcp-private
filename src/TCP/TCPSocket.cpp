@@ -43,6 +43,7 @@ TCPSocket::SocketState TCPSocket::getState() {
 void TCPSocket::setState(SocketState newState) {
     std::unique_lock<std::shared_mutex> lk(socketMutex);
     if (newState == SocketState::CLOSED) {
+        // Remove from any queues socket is on if this was a passive open
         if (state == SocketState::SYN_RECV) {
             std::unique_lock<std::mutex> lkAccept(originator->acceptMutex);
             originator->incompleteConns.erase(toTuple());
@@ -328,24 +329,19 @@ void TCPSocket::moveToCompleteConnection(std::shared_ptr<TCPSocket> sock) {
  * @return int 
  */
 int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
-    buf.resize(numBytes);
-
     std::unique_lock<std::mutex> lk(readMutex);
-    std::shared_lock<std::shared_mutex> lkSocket(socketMutex);
 
-    int readSoFar = 0;
-    auto copyTo = buf.begin();
+    int readSoFar = recvBuffer.read(numBytes, buf);
+    if (!blocking && readSoFar > 0) {
+        return readSoFar;
+    }
+
     while (readSoFar < numBytes) {
-        std::string tempBuf(numBytes - readSoFar, '\0');
-        readSoFar += recvBuffer.read(numBytes - readSoFar, tempBuf);
-        copyTo = std::copy(tempBuf.begin(), tempBuf.end(), copyTo);
-
-        if (!blocking && readSoFar > 0) {
-            break;
-        }
         // Must block on condition variable
         readCond.wait(lk);
+        readSoFar += recvBuffer.read(numBytes - readSoFar, buf);
 
+        std::shared_lock<std::shared_mutex> lkSocket(socketMutex);
         if (state != TCPSocket::SocketState::ESTABLISHED &&
             state != TCPSocket::SocketState::FIN_WAIT1 && 
             state != TCPSocket::SocketState::FIN_WAIT2) {
@@ -353,6 +349,7 @@ int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
                 << color_reset << std::endl;
             break;
         }
+        lkSocket.unlock();
     }
 
     return readSoFar;
@@ -435,16 +432,13 @@ void TCPSocket::sendTCPPacket(std::shared_ptr<TCPSocket::TCPPacket>& tcpPacket) 
     // Add to retransmission queue if necessary 
     bool expectAck = (tcpHeader->th_flags & (TH_SYN | TH_FIN)) || (payload.size() > 0);
     if (expectAck) {
-        std::unique_lock<std::shared_mutex> lk(socketMutex);
         retransmissionQueue.push_back(tcpPacket);
-        lk.unlock();
 
         if (!retransmissionActive) {
             retransmissionActive = true;
             lastRetransmitTime = std::chrono::steady_clock::now();
         }
 
-        std::shared_lock<std::shared_mutex> lkShared(socketMutex);
         if (sendWnd == 0) {
             lastRetransmitTime = std::chrono::steady_clock::now();
         }
@@ -485,13 +479,14 @@ void TCPSocket::retransmitPackets() {
 
     std::unique_lock<std::shared_mutex> lk(socketMutex);
 
-    std::chrono::milliseconds retransmitInterval(DEFAULT_RTO);
+    int retransmitInterval(DEFAULT_RTO);
     for (int i = 0; i < retransmitAttempts; i++) {
         retransmitInterval *= 2;
     }
 
     auto curTime = std::chrono::steady_clock::now();
-    auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(curTime - lastRetransmitTime);
+    auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(curTime - lastRetransmitTime).count();
+    std::cout << "TIME DIFF: " << timeDiff << " " << retransmitInterval << std::endl;
     if (timeDiff < retransmitInterval) {
         return;
     }
@@ -502,6 +497,9 @@ void TCPSocket::retransmitPackets() {
     // Close socket if too many retransmission attempts have been made
     if (retransmitAttempts > maxRetransmits) {
         // TODO: Figure out how to actually remove this socket from the table
+        std::cerr << yellow << "warning: max retransmission attempts exceeded; socket closing" 
+            << color_reset << std::endl;
+        retransmissionActive = false;
         state = SocketState::CLOSED;
         return;
     }
@@ -514,7 +512,6 @@ void TCPSocket::retransmitPackets() {
     }
 
     // Retransmit packets
-    std::shared_lock lkShared(socketMutex);
     flushRetransmission();
 }
 
@@ -575,25 +572,18 @@ uint16_t TCPSocket::computeTCPChecksum(
         uint16_t tcp_length;
     };
 
-    struct pseudo_header ph;
 
     size_t ph_len = sizeof(struct pseudo_header);
     size_t hdr_len = sizeof(struct tcphdr);
     assert(ph_len == 12);
     assert(hdr_len == 20);
 
-    // Now fill in the pesudo header
-    memset(&ph, 0, sizeof(struct pseudo_header));
-    ph.ip_src = virtual_ip_src;
-    ph.ip_dst = virtual_ip_dst;
-    ph.zero = 0;
-    ph.protocol = 6;  // TCP's assigned IP protocol number is 6
-
     // From RFC: "The TCP Length is the TCP header length plus the
     // data length in octets (this is not an explicitly transmitted
     // quantity, but is computed), and it does not count the 12 octets
     // of the pseudo header."
-    ph.tcp_length = htons(hdr_len + payload.size());
+    uint16_t tcp_len = htons(hdr_len + payload.size());
+    struct pseudo_header ph { virtual_ip_src, virtual_ip_dst, 0, 6, tcp_len };
 
     size_t total_len = ph_len + hdr_len + payload.size();
     char buffer[total_len];
