@@ -449,12 +449,26 @@ void TCPSocket::receiveTCPPacket(
 
             // Need to do this conversion since tcpHeader is in network byte order
             packet->tcpHeader->th_seq = ntohl(packet->tcpHeader->th_seq);
+            uint32_t segStart = packet->tcpHeader->th_seq;
             uint32_t segEnd = calculateSegmentEnd(packet->tcpHeader, packet->payload);
             packet->tcpHeader->th_seq = htonl(packet->tcpHeader->th_seq);
 
             if (segEnd <= tcpHeader->th_ack) {
                 retransmissionQueue.pop_front();
             } else {
+                // Trim retransmission packet
+                if (segStart < tcpHeader->th_ack) {
+                    int newStart = tcpHeader->th_ack - segStart;
+
+                    unsigned char flags = packet->tcpHeader->th_flags;
+                    uint32_t seqNum = tcpHeader->th_ack;
+                    uint32_t ackNum = ntohl(packet->tcpHeader->th_ack);
+                    std::string newPayload = packet->payload.substr(newStart);
+
+                    retransmissionQueue.pop_front();
+                    auto newPacket = createTCPPacket(flags, seqNum, ackNum, newPayload);
+                    retransmissionQueue.push_front(newPacket);
+                }
                 break;
             }
         }
