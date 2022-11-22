@@ -26,7 +26,7 @@
 #include <include/TCP/TCPSocket.h>
 #include <include/TCP/CircularBuffer.h>
 
-const uint16_t RECV_WINDOW_SIZE = 30;
+const uint16_t RECV_WINDOW_SIZE = 65535;
 
 // RFC states that lower bound for RTO should be 1 second
 // For this project, this is too long so we use 1 ms

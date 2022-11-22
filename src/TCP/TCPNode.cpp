@@ -194,7 +194,7 @@ int TCPNode::write(int socket, const std::string& buf, int numBytes) {
             for (int i = 0; i < ((numBytes / MAX_TRANSMIT_UNIT) + 1); i++) {
                 int start = i * MAX_TRANSMIT_UNIT;
                 int end = std::min(numBytes, start + MAX_TRANSMIT_UNIT);
-                std::string payload = buf.substr(i, end - start);
+                std::string payload = buf.substr(start, end - start);
 
                 auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), 
                                                        sock->getRecvNext(), payload);
@@ -414,7 +414,6 @@ void TCPNode::handleClient(
     std::shared_ptr<struct tcphdr> tcpHeader, 
     std::string& payload) {
     TCPTuple socketTuple = extractTCPTuple(ipHeader, tcpHeader);
-    std::cout << "handle message" << std::endl;
     // ===================================================================================
     // CLOSED
     // ===================================================================================
@@ -1070,7 +1069,6 @@ void TCPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& paylo
     receive(ipHeader, tcpHeader, remainingPayload);
 }
 
-
 /**
  * @brief Connect to the given ip and port, send the entirety of the specified file, 
  * and close the connection. Your driver must continue to accept other commands.
@@ -1111,7 +1109,7 @@ void TCPNode::sf(std::string& filename, std::string ip, uint16_t port) {
     std::cout << "file sent: " << bytesTransferred << " bytes transferred" << std::endl;
     // Close the connection
     file.close();
-    this->close(sd);
+    // this->close(sd); #todo
 }
 
 /**
@@ -1143,7 +1141,7 @@ void TCPNode::rf(std::string& filename, int port) {
     }
 
     // Write everything you can read from the socket to the given file
-    std::ofstream file(filename.c_str(), std::ios::binary);
+    std::ofstream file(filename.c_str(), std::ios::binary | std::ios_base::app);
     if (!file.is_open()) {
         std::cerr << red << "error: could not open file " << filename << color_reset << std::endl;
         return;
@@ -1154,12 +1152,11 @@ void TCPNode::rf(std::string& filename, int port) {
     int totalBytes = 0;
     int bytesTransferred;
 
-    while ((bytesTransferred = this->read(connSock, buffer, 65535, false)) > 0) {
-        file.write(buffer.c_str(), bytesTransferred);
+    while ((bytesTransferred = read(connSock, buffer, 65535, false)) > 0) {
+        file << buffer;
         totalBytes += bytesTransferred;
     }
     
-    std::cout << "i received: " << buffer << std::endl;
     file.seekp(0, std::ios::end);
     file.write(buffer.c_str(), bytesTransferred);
     std::cout << "file received: " << file.tellp() << " bytes transferred" << std::endl;
