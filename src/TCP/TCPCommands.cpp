@@ -285,17 +285,15 @@ void TCPCommands::shutdown(std::string& args) {
     }
 
     int socketId = stoi(parsedArgs[0]);
+    std::string shutdownStr = parsedArgs[1];
 
     ShutdownType type = WRITE; // perhaps make these enums
     if (spaceIdx != std::string::npos) {
-        prevSpaceIdx = spaceIdx + 1;
-        spaceIdx = args.find(' ', prevSpaceIdx);
-        std::string str = args.substr(prevSpaceIdx, spaceIdx);
-        if (str == "read") {
+        if (shutdownStr == "read") {
             type = READ;
-        } else if (str == "write") {
+        } else if (shutdownStr == "write") {
             type = WRITE;
-        } else if (str == "both") {
+        } else if (shutdownStr == "both") {
             type = BOTH;
         } else {
             std::cerr << red << "syntax error: type must be 'read', 'write', or 'both'"
