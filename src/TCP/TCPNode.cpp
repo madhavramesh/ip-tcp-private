@@ -317,8 +317,7 @@ void TCPNode::retransmitPackets() {
             it++;
             sock->retransmitPackets();
 
-            TCPSocket::SocketState sockState = sock->getState();
-            if (sockState == TCPSocket::SocketState::CLOSED) {
+            if (sock->getState() == TCPSocket::SocketState::CLOSED) {
                 deleteSocket(sock->toTuple());
             }
         }
@@ -377,8 +376,7 @@ void TCPNode::handleClient(
     // ===================================================================================
 
     // Check if listen socket exists
-    TCPSocket::SocketState sockState = sock->getState();
-    if (sock && sockState == TCPSocket::SocketState::LISTEN) {
+    if (sock && sock->getState() == TCPSocket::SocketState::LISTEN) {
         transitionFromListen(tcpHeader, payload, sock, socketTuple);
         return;
     } 
@@ -387,7 +385,7 @@ void TCPNode::handleClient(
     // SYN_SENT 
     // ===================================================================================
     
-    if (sockState == TCPSocket::SocketState::SYN_SENT) {
+    if (sock->getState() == TCPSocket::SocketState::SYN_SENT) {
         transitionFromSynSent(tcpHeader, ipHeader, payload, sock);
         return;
     }
@@ -440,8 +438,9 @@ void TCPNode::handleClient(
         if (ack < sock->getUnack() || ack > sock->getSendNext()) {
             return;
         }
-        if (sockState == TCPSocket::SocketState::CLOSED || 
-            sockState == TCPSocket::SocketState::TIME_WAIT) {
+        TCPSocket::SocketState state = sock->getState();
+        if (state == TCPSocket::SocketState::CLOSED || 
+            state == TCPSocket::SocketState::TIME_WAIT) {
             return;
         }
     } else {
@@ -725,9 +724,8 @@ void TCPNode::transitionFromOtherSYNBit(std::shared_ptr<struct tcphdr> tcpHeader
 
 void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
-    TCPSocket::SocketState sockState = sock->getState();
     tcp_seq ack = tcpHeader->th_ack;
-    if (sockState == TCPSocket::SocketState::SYN_RECV) {
+    if (sock->getState() == TCPSocket::SocketState::SYN_RECV) {
         if (sock->getUnack() < ack && ack <= sock->getSendNext()) {
             std::cout << "syn recv to est" << std::endl;
             sock->setState(TCPSocket::SocketState::ESTABLISHED);
@@ -757,6 +755,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
     // ESTABLISHED, FIN_WAIT1, FIN_WAIT2, and CLOSE_WAIT states
     // Note, the reason why they are ORs is because they all have to do at least the processing for 
     // the established state.
+    TCPSocket::SocketState sockState = sock->getState();
     if (sockState == TCPSocket::SocketState::ESTABLISHED || 
         sockState == TCPSocket::SocketState::FIN_WAIT1   ||
         sockState == TCPSocket::SocketState::FIN_WAIT2   || 
@@ -798,7 +797,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
             }
                 
             // FIN-WAIT-1
-            if (sockState == TCPSocket::SocketState::FIN_WAIT1) {
+            if (sock->getState() == TCPSocket::SocketState::FIN_WAIT1) {
                 // If our FIN segment we previously sent was acknowledged, move to FIN_WAIT2
                 if (ack == sock->getSendNext()) { 
                     sock->setState(TCPSocket::SocketState::FIN_WAIT2);
@@ -806,7 +805,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
             }
 
             // FIN-WAIT-2
-            if (sockState == TCPSocket::SocketState::FIN_WAIT2) {
+            if (sock->getState() == TCPSocket::SocketState::FIN_WAIT2) {
                 // if the retransmission queue is empty, 
                 // the user's CLOSE can be acknowledged ("ok") but do not delete the TCB.
                 if (sock->retransmissionQueueEmpty()) {
@@ -814,7 +813,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
                 }
             }
 
-            if (sockState == TCPSocket::SocketState::CLOSING) {
+            if (sock->getState() == TCPSocket::SocketState::CLOSING) {
                 // If the ACK acknowledges our FIN, enter the TIME-WAIT state; 
                 // otherwise, ignore the segment
                 if (ack == sock->getSendNext()) {
@@ -824,7 +823,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
             }
         }
 
-        if (sockState == TCPSocket::SocketState::LAST_ACK) {
+        if (sock->getState() == TCPSocket::SocketState::LAST_ACK) {
             // The only thing that can arrive in this state is an 
             // acknowledgment of our FIN. If our FIN is now acknowledged, 
             // delete the TCB, enter the CLOSED state, and return.
@@ -834,7 +833,7 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
             }
         }
 
-        if (sockState == TCPSocket::SocketState::TIME_WAIT) {
+        if (sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
             // The only thing that can arrive in this state is a 
             // retransmission of the remote FIN. Acknowledge it, and restart the 2 MSL timeout.
             if (tcpHeader->th_flags & TH_FIN) { // #todo check logic, do we need to check seq and ack too?
@@ -881,6 +880,7 @@ void TCPNode::processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
         // TODO: consider piggy backing
     }   
     
+    sockState = sock->getState();
     if (sockState == TCPSocket::SocketState::CLOSE_WAIT ||
         sockState == TCPSocket::SocketState::CLOSING    ||
         sockState == TCPSocket::SocketState::LAST_ACK   ||
@@ -910,7 +910,7 @@ void TCPNode::TCPNode::transitionFromOtherFINBit(std::shared_ptr<struct tcphdr> 
     std::cout << yellow << "warning: connection closing" << color_reset << std::endl;
 
     // advance RCV.NXT over the FIN
-    sock->setRecvBufNext(sock->getSendNext() + 1);
+    sock->setRecvBufNext(sock->getRecvNext() + 1);
 
     // send ACK back
     auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), 
@@ -923,7 +923,7 @@ void TCPNode::TCPNode::transitionFromOtherFINBit(std::shared_ptr<struct tcphdr> 
         sock->setState(TCPSocket::SocketState::CLOSE_WAIT);
     }
 
-    if (sockState == TCPSocket::SocketState::FIN_WAIT1) {
+    if (sock->getState() == TCPSocket::SocketState::FIN_WAIT1) {
         // If our FIN has been ACKed (perhaps in this segment), 
         // then enter TIME-WAIT, start the time-wait timer, turn off the other timers; 
         // otherwise, enter the CLOSING state.
@@ -935,13 +935,13 @@ void TCPNode::TCPNode::transitionFromOtherFINBit(std::shared_ptr<struct tcphdr> 
         }
     }
 
-    if (sockState == TCPSocket::SocketState::FIN_WAIT2) {
+    if (sock->getState() == TCPSocket::SocketState::FIN_WAIT2) {
         // Enter the TIME-WAIT state. Start the time-wait timer, turn off the other timers.
         sock->setState(TCPSocket::SocketState::TIME_WAIT);
         sock->resetTimedWaitTime();
     }
 
-    if (sockState == TCPSocket::SocketState::TIME_WAIT) {
+    if (sock->getState() == TCPSocket::SocketState::TIME_WAIT) {
         sock->resetTimedWaitTime();
     }    
 }
@@ -1005,7 +1005,6 @@ void TCPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& paylo
     // #todo fix this
     if (TCPSocket::computeTCPChecksum(srcIP, destIP, tcpHeader, remainingPayload) !=
         prevCheckSum) {
-            std::cout << "checksum wrong" << std::endl;
             return;
     }
     tcpHeader->th_sum = prevCheckSum;
