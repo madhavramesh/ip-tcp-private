@@ -456,8 +456,14 @@ void TCPSocket::receiveTCPPacket(
 
         while (!retransmissionQueue.empty()) {
             auto& packet = retransmissionQueue.front();
-            uint32_t segEnd = calculateSegmentEnd(packet->tcpHeader, packet->payload);
 
+            // Need to do this conversion since tcpHeader is in network byte order
+            packet->tcpHeader->th_seq = ntohl(packet->tcpHeader->th_seq);
+            uint32_t segEnd = calculateSegmentEnd(packet->tcpHeader, packet->payload);
+            packet->tcpHeader->th_seq = htonl(packet->tcpHeader->th_seq);
+
+            std::cout << "SEG END DS: " << segEnd << std::endl;
+            std::cout << "ACK DS: " << tcpHeader->th_ack << std::endl;
             if (segEnd <= tcpHeader->th_ack) {
                 retransmissionQueue.pop_front();
             } else {
@@ -487,7 +493,7 @@ void TCPSocket::retransmitPackets() {
 
     auto curTime = std::chrono::steady_clock::now();
     auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(curTime - lastRetransmitTime).count();
-    std::cout << "TIME DIFF: " << timeDiff << " " << retransmitInterval << std::endl;
+    // std::cout << "TIME DIFF: " << timeDiff << " " << retransmitInterval << std::endl;
     if (timeDiff < retransmitInterval) {
         return;
     }
@@ -526,7 +532,6 @@ void TCPSocket::flushRetransmission() {
         std::string newPayload(sizeof(struct tcphdr) + packet->payload.size(), '\0');
         memcpy(&newPayload[0], packet->tcpHeader.get(), sizeof(struct tcphdr));
         memcpy(&newPayload[sizeof(struct tcphdr)], &packet->payload[0], packet->payload.size());
-        std::cout << "flushing" << std::endl;
         ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
                         TCP_PROTOCOL_NUMBER); 
     }
@@ -534,7 +539,6 @@ void TCPSocket::flushRetransmission() {
 
 void TCPSocket::zeroWindowProbe() {
     std::shared_lock<std::shared_mutex> lk(socketMutex);
-    std::cout << "z wind" << std::endl;
     for (auto& packet : retransmissionQueue) {
         uint32_t segStart = packet->tcpHeader->th_seq;
         uint32_t segEnd = calculateSegmentEnd(packet->tcpHeader, packet->payload);
