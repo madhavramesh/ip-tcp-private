@@ -96,6 +96,7 @@ void TCPSocket::setRecvBufLast(uint32_t newRecvBufLast) {
 }
 
 void TCPSocket::setAllowRead(bool newAllowRead) {
+    std::cout << "set allow read to " << newAllowRead << std::endl;
     allowRead = newAllowRead;
 }
 
