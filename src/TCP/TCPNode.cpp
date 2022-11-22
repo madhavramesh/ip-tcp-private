@@ -286,11 +286,12 @@ void TCPNode::shutdown(int socket, int type) {
 
     switch (type) {
         case READ: // Close reading part
-            // transition to CLOSE_WAIT
+            std::cout << "Shutting down read " << std::endl;
             sock->setAllowRead(false);
             return;
         case WRITE: 
             // Close writing part, send FIN 
+            std::cout << "Shutting down read " << std::endl;
             {
                 auto tcpPacket = sock->createTCPPacket(TH_FIN, sock->getSendNext(), sock->getRecvNext(), "");
                 sock->sendTCPPacket(tcpPacket);
@@ -298,8 +299,9 @@ void TCPNode::shutdown(int socket, int type) {
             }
             return;
         case BOTH: // Close both
-            // Do READ case 
+            std::cout << "Shutting down both " << std::endl;
             {
+                // Do READ case 
                 sock->setAllowRead(false);
 
                 // Do WRITE case
@@ -534,6 +536,7 @@ void TCPNode::transitionFromClosed(std::shared_ptr<struct tcphdr> tcpHeader,
 // Handles creation of new socket in SYN RECEIVED state
 void TCPNode::transitionFromListen(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload, 
         std::shared_ptr<TCPSocket> listenSock, TCPTuple& socketTuple) {
+    std::cout << "IN transition from listen" << std::endl;
     // Check for RST
     if (tcpHeader->th_flags & TH_RST) {
         return;
@@ -543,6 +546,9 @@ void TCPNode::transitionFromListen(std::shared_ptr<struct tcphdr> tcpHeader, std
 
     // Check for ACK
     if (tcpHeader->th_flags & TH_ACK) {
+        std::cout << "ACK detected" << std::endl;
+        std::cout << socketTuple.getSrcAddr() << " " << socketTuple.getSrcPort() << " " 
+            << socketTuple.getDestAddr() << " " << socketTuple.getDestPort() << std::endl;
         auto tcpPacket = tempSock->createTCPPacket(TH_RST, tcpHeader->th_ack, 0, "");
         tempSock->sendTCPPacket(tcpPacket);
         return;
@@ -595,7 +601,7 @@ void TCPNode::transitionFromSynSent(std::shared_ptr<struct tcphdr> tcpHeader,
         // drop the segment, 
         // enter CLOSED state, delete TCB, and return. 
         // Otherwise (no ACK), drop the segment and return.
-        if (ackBitSet) {
+        if (sock->getUnack() < tcpHeader->th_ack && tcpHeader->th_ack <= sock->getSendNext()) {
             std::cerr << red << "error: connection reset" << color_reset << std::endl;
             deleteSocket(sock->toTuple());
         } 
@@ -728,7 +734,7 @@ void TCPNode::transitionFromOtherRSTBit(std::shared_ptr<struct tcphdr> tcpHeader
         // All segment queues should be flushed. Users should also receive an unsolicited general "connection reset" signal. 
 
         // Flush retransmissionQueue and delete TCB
-        std::cerr << red << "connection reset" << color_reset << std::endl;
+        std::cerr << red << "error: connection reset" << color_reset << std::endl;
         sock->flushRetransmission();
         deleteSocket(sock->toTuple());
     } else if (sockState == TCPSocket::SocketState::CLOSING ||
@@ -768,7 +774,7 @@ void TCPNode::transitionFromOtherSYNBit(std::shared_ptr<struct tcphdr> tcpHeader
             auto tcpPacket = sock->createTCPPacket(TH_RST, sock->getSendNext(), sock->getRecvNext(), "");
             sock->sendTCPPacket(tcpPacket);
 
-            std::cerr << red << "connection reset" << color_reset << std::endl;
+            std::cerr << red << "error: connection reset" << color_reset << std::endl;
             // Flush segment queues and delete TCB
             sock->flushRetransmission();
             deleteSocket(sock->toTuple());
@@ -959,6 +965,7 @@ void TCPNode::TCPNode::transitionFromOtherFINBit(std::shared_ptr<struct tcphdr> 
     // advance RCV.NXT over the FIN, and send an acknowledgment for the FIN. 
     // Note that FIN implies PUSH for any segment text not yet delivered to the user.
     std::cout << yellow << "warning: connection closing" << color_reset << std::endl;
+    sock->setAllowRead(false);
 
     // advance RCV.NXT over the FIN
     sock->setRecvBufNext(sock->getRecvNext() + 1);

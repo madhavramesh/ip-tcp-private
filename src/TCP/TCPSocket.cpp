@@ -97,6 +97,8 @@ void TCPSocket::setRecvBufLast(uint32_t newRecvBufLast) {
 
 void TCPSocket::setAllowRead(bool newAllowRead) {
     allowRead = newAllowRead;
+    std::cout << "Setting to " << newAllowRead << std::endl;
+    readCond.notify_one();
 }
 
 void TCPSocket::resetTimedWaitTime() {
@@ -335,10 +337,11 @@ int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
         return readSoFar;
     }
 
-    while (readSoFar < numBytes) {
+    while (readSoFar < numBytes && allowRead) {
         // Must block on condition variable
         readCond.wait(lk);
         readSoFar += recvBuffer.read(numBytes - readSoFar, buf);
+        std::cout << allowRead << std::endl;
 
         if (!blocking && readSoFar > 0) {
             return readSoFar;
@@ -417,8 +420,8 @@ void TCPSocket::sendTCPPacket(std::shared_ptr<TCPSocket::TCPPacket>& tcpPacket) 
     memcpy(&newPayload[0], tcpHeader.get(), sizeof(struct tcphdr));
     memcpy(&newPayload[sizeof(struct tcphdr)], &payload[0], payload.size());
 
-    // Check if sequence number is within receiver's window
-    if (ntohl(tcpHeader->th_seq) < unAck + sendWnd) {
+    // Check if sequence number is within receiver's window or we're sending a RST
+    if ((ntohl(tcpHeader->th_seq) < unAck + sendWnd) || (tcpHeader->th_flags & TH_RST)) {
         // // Call IP's send method to send packet
         ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
                         TCP_PROTOCOL_NUMBER); 
