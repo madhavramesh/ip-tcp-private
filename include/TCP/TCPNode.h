@@ -70,7 +70,7 @@ class TCPNode {
         // nbyte = 0 should return 0 as well
         // write is REQUIRED to block until all bytes are in the send buffer
         // Some possible failures : EBADF, EINVAL, EPIPE
-        int write(int socket, std::string& buf, int numBytes);
+        int write(int socket, const std::string& buf, int numBytes);
 
         // read on an open socket (RECEIVE in the RFC)
         // return num bytes read or negative number on failure or 0 on eof and shutdown_read
@@ -97,6 +97,10 @@ class TCPNode {
         // any data not yet ACKed should still be retransmitted.
         // Some possible failures : EBADF
         void close(int socket);
+
+        void sf(std::string& filename, std::string ip, uint16_t port);
+        void rf(std::string& filename, int port);
+
 
         // Returns all sockets in socket descriptor table
         std::vector<SockInfo> getSockets();

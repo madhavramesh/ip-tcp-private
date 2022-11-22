@@ -339,6 +339,28 @@ void TCPCommands::sendfile(std::string& args) {
         std::cerr << red << "usage: " << "sendfile " << sendfileParams << color_reset << std::endl;
         return;
     }
+    std::vector<std::string> parsedArgs;
+    // Parse the filename, destination string, and destination port
+    int prevSpaceIdx = -1;
+    int spaceIdx = -1;
+    for (int i = 0; i < 3; i++) {
+        prevSpaceIdx = spaceIdx + 1;
+        spaceIdx = args.find(' ', prevSpaceIdx);
+
+        if (prevSpaceIdx == std::string::npos) {
+            std::cerr << red << "usage: " << "sf " << sendfileParams << color_reset << std::endl;
+        }
+        parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
+    }
+
+    // Confirm that socket id is a digit
+    for (char c : parsedArgs[2]) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "sf " << sendfileParams << color_reset << std::endl;
+            return;
+        }
+    };
+    tcpNode->sf(parsedArgs[0], parsedArgs[1], stoi(parsedArgs[2]));
 }
 
 void TCPCommands::recvfile(std::string& args) {
@@ -346,6 +368,28 @@ void TCPCommands::recvfile(std::string& args) {
         std::cerr << red << "usage: " << "recvfile " << recvfileParams << color_reset << std::endl;
         return;
     }
+    std::vector<std::string> parsedArgs;
+    // Parse the filename and listener port
+    int prevSpaceIdx = -1;
+    int spaceIdx = -1;
+    for (int i = 0; i < 2; i++) {
+        prevSpaceIdx = spaceIdx + 1;
+        spaceIdx = args.find(' ', prevSpaceIdx);
+
+        if (prevSpaceIdx == std::string::npos) {
+            std::cerr << red << "usage: " << "sf " << sendfileParams << color_reset << std::endl;
+        }
+        parsedArgs.push_back(args.substr(prevSpaceIdx, spaceIdx - prevSpaceIdx));
+    }
+
+    // Confirm that socket id is a digit
+    for (char c : parsedArgs[1]) {
+        if (!isdigit(c)) {
+            std::cerr << red << "usage: " << "rf " << recvfileParams << color_reset << std::endl;
+            return;
+        }
+    };
+    tcpNode->rf(parsedArgs[0], stoi(parsedArgs[1]));
 }
 
 // bonsai

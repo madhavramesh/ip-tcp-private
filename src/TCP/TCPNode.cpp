@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <utility>
+#include <fstream>
 
 #include <netinet/tcp.h>
 #include "include/tools/colors.h"
@@ -132,6 +133,13 @@ int TCPNode::accept(int socket, std::string& address) {
     return -1;
 }   
 
+/**
+ * @brief Returns -1 on error
+ * 
+ * @param address 
+ * @param port 
+ * @return int 
+ */
 int TCPNode::connect(std::string& address, uint16_t port) {
     // Randomly select an interface to use as srcAddr
     auto interfaces = ipNode->getInterfaces();
@@ -163,7 +171,7 @@ int TCPNode::connect(std::string& address, uint16_t port) {
     return socketId;
 }
 
-int TCPNode::write(int socket, std::string& buf, int numBytes) {
+int TCPNode::write(int socket, const std::string& buf, int numBytes) {
     // Check if socket descriptor exists
     auto sockIt = sd_table.find(socket);
     if (sockIt == sd_table.end()) {
@@ -774,7 +782,6 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
     tcp_seq ack = tcpHeader->th_ack;
     if (sock->getState() == TCPSocket::SocketState::SYN_RECV) {
         if (sock->getUnack() < ack && ack <= sock->getSendNext()) {
-            std::cout << "syn recv to est" << std::endl;
             sock->setState(TCPSocket::SocketState::ESTABLISHED);
             sock->setSendWnd(tcpHeader->th_win);
             sock->setSendWl1(tcpHeader->th_seq);
@@ -811,7 +818,6 @@ void TCPNode::transitionFromOtherACKBit(std::shared_ptr<struct ip> ipHeader, std
             std::cout << "est" << std::endl;
             // Update unAck, if needed
             if (sock->getUnack() < ack && ack <= sock->getSendNext()) { 
-                std::cout << "inside" << std::endl;
                 // If ACK follows within the window, then it is valid so update UNA
                 sock->setUnack(ack);
                 // Handle retransmission queue: remove those that have been acked
@@ -1059,3 +1065,93 @@ void TCPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& paylo
     receive(ipHeader, tcpHeader, remainingPayload);
 }
 
+
+/**
+ * @brief Connect to the given ip and port, send the entirety of the specified file, 
+ * and close the connection. Your driver must continue to accept other commands.
+ * 
+ * @param filename 
+ * @param ip 
+ * @param port 
+ */
+void TCPNode::sf(std::string& filename, std::string ip, uint16_t port) {
+    // #todo: consider making connect blocking
+    // #todo: put this into a thread
+
+    // Connect to given ip and port
+    int sd = this->connect(ip, port);
+    if (sd == -1) {
+        std::cerr << red << "error: could not connect to " << ip << ":" << port << color_reset << std::endl;
+        return;
+    }
+
+    // Send entire file
+    std::ifstream file(filename.c_str(), std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << red << "error: could not open file " << filename << color_reset << std::endl;
+        return;
+    }
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+
+    std::cout << "sending file " << filename << " of size " << buffer.str().size() << " to " << ip << ":" << port << std::endl;
+
+    // #todo, make sure this blocks
+    int bytesTransferred;
+    if ((bytesTransferred = this->write(sd, buffer.str(), buffer.str().size())) == -1) {
+        std::cerr << red << "error: could not write to socket " << sd << color_reset << std::endl;
+        return;
+    }
+
+    std::cout << "file sent: " << bytesTransferred << " bytes transferred" << std::endl;
+    // Close the connection
+    file.close();
+    this->close(sd);
+}
+
+/**
+ * @brief Listen for a connection on the given port. 
+ * Once established, write everything you can read from the socket to the given file. 
+ * Once the other side closes the connection, close the connection as well. 
+ * Your driver must continue to accept other commands. 
+ * Hint: give /dev/stdout as the filename to print to the screen.
+ * 
+ * @param ip 
+ * @param port 
+ */
+void TCPNode::rf(std::string& filename, int port) {
+    // #todo make this non blocking 
+
+    // Create listener
+    int sd = this->listen(filename, port);
+    if (sd == -1) {
+        std::cerr << red << "error: could not listen on port " << port << color_reset << std::endl;
+        return;
+    }
+
+    // Accept connection
+    std::string address;
+    int res = this->accept(sd, address);
+    if (res == -1) {
+        std::cerr << red << "error: could not accept connection on socket " << sd << color_reset << std::endl;
+        return;
+    }
+
+    // Write everything you can read from the socket to the given file
+    std::ofstream file(filename.c_str(), std::ios::binary);
+    if (!file.is_open()) {
+        std::cerr << red << "error: could not open file " << filename << color_reset << std::endl;
+        return;
+    }
+    std::cout << "receiving file " << filename << " from " << address << std::endl;
+
+    std::string buffer;
+    int bytesTransferred;
+    while ((bytesTransferred = this->read(sd, buffer, 65535, false)) > 0) {
+        file.write(buffer.c_str(), bytesTransferred);
+    }
+    file.seekp(0, std::ios::end);
+    file.write(buffer.c_str(), bytesTransferred);
+    std::cout << "file received: " << file.tellp() << " bytes transferred" << std::endl;
+    file.close();
+}
