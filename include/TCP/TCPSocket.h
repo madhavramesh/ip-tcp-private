@@ -26,14 +26,18 @@
 #include <include/TCP/TCPSocket.h>
 #include <include/TCP/CircularBuffer.h>
 
-const uint16_t RECV_WINDOW_SIZE = 65535;
+const uint16_t RECV_WINDOW_SIZE = 30;
 
 // RFC states that lower bound for RTO should be 1 second
 // For this project, this is too long so we use 1 ms
 // #todo this was changed
-const int DEFAULT_RTO = 5000;              // milliseconds
-const int MAX_RETRANSMITS = 5;          // doesn't account for calculation of R1 and R2
-const int TIME_WAIT_LEN = 120000;       // milliseconds
+const int DEFAULT_RTO = 100;                   // milliseconds
+const int DEFAULT_PROBE_INTERVAL = 64;         // milliseconds
+const int MAX_PROBE_INTERVAL = 512;            // milliseconds
+
+// MAX_RETRANSMIT = R1 in RFC. We use exponential backoff too though.
+const int MAX_RETRANSMITS = 5;                  
+const int TIME_WAIT_LEN = 120000;               // milliseconds
 
 const int TCP_PROTOCOL_NUMBER = 6;
 
@@ -214,16 +218,18 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             std::vector<std::shared_ptr<TCPPacket>>, 
             ComparePacketPtrs> earlyArrivals;
 
-        // TODO: Potentially include both R1 and R2 timeouts
         // TODO: Dynamically calculate RTO
 
-        // TODO: Implement zero-window probing and Silly Window Syndrome
+        // TODO: Silly Window Syndrome
 
         // Retransmission information
         int maxRetransmits { MAX_RETRANSMITS };
         int retransmitAttempts { 0 };
         std::chrono::time_point<std::chrono::steady_clock> lastRetransmitTime;
         std::atomic<bool> retransmissionActive;
+
+        // Zero window probing information 
+        int probeAttempts { 0 };
 
         // TCP Packets to retransmit. Removed from queue once ACKed
         std::deque<std::shared_ptr<TCPPacket>> retransmissionQueue;

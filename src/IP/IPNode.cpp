@@ -172,7 +172,6 @@ void IPNode::sendMsg(std::string destAddr, std::string srcAddr, const std::strin
     
     // Check if destination address exists in the routing table
     // Useful if routing table entry expires
-    // std::cout << "destAddr: " << destAddr << std::endl;
     std::string nextHopAddr;
     int cost;
     std::chrono::time_point<std::chrono::steady_clock> time;
@@ -645,8 +644,6 @@ void IPNode::cleanUpRoutingTable(std::unordered_map<std::string, std::tuple<std:
         auto end        = chrono::steady_clock::now();
         auto delta      = chrono::duration_cast<chrono::seconds>(end - lastUpdate).count();
 
-        // std::cout << std::c_time(chrono::steady_clock::to_time_t(end)) << std::endl;
-        // std::cout << delta << std::endl;
         if (delta >= 12) {
             it = routingTable.erase(it);
         } else {

@@ -194,7 +194,7 @@ void TCPCommands::send(std::string& args) {
 
     int socketId = stoi(parsedArgs[0]);
     std::string payload = args.substr(spaceIdx + 1);
-    std::cout << "your payload would be " << payload << std::endl;
+    // std::cout << "your payload would be " << payload << std::endl;
 
     int numSent = tcpNode->write(socketId, payload, payload.size());
     if (numSent < 0) {
@@ -256,7 +256,7 @@ void TCPCommands::recv(std::string& args) {
     std::string buf;
     int bytesRead = tcpNode->read(socketId, buf, bytesToRead, blocking);
 
-    std::cout << dim << "read on " << buf.size() << " bytes returned " << bytesRead 
+    std::cout << dim << "read on " << bytesToRead << " bytes returned " << bytesRead 
         << "; contents of buffer: '" << buf << "'" << color_reset << std::endl;
 }
 
