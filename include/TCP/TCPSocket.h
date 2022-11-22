@@ -31,7 +31,7 @@ const uint16_t RECV_WINDOW_SIZE = 65535;
 // RFC states that lower bound for RTO should be 1 second
 // For this project, this is too long so we use 1 ms
 // #todo this was changed
-const int DEFAULT_RTO = 1000;              // milliseconds
+const int DEFAULT_RTO = 5000;              // milliseconds
 const int MAX_RETRANSMITS = 5;          // doesn't account for calculation of R1 and R2
 const int TIME_WAIT_LEN = 120000;       // milliseconds
 
