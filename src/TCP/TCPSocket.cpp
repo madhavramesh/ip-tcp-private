@@ -456,9 +456,12 @@ void TCPSocket::receiveTCPPacket(
 
         while (!retransmissionQueue.empty()) {
             auto& packet = retransmissionQueue.front();
+            packet->tcpHeader->th_seq = ntohl(packet->tcpHeader->th_seq);
             uint32_t segEnd = calculateSegmentEnd(packet->tcpHeader, packet->payload);
+            packet->tcpHeader->th_seq = htonl(packet->tcpHeader->th_seq);
 
-            if (segEnd <= tcpHeader->th_ack) {
+            if (segEnd <= ntohl(tcpHeader->th_ack)) {
+                std::cout << "popping because " << segEnd << " <= " << tcpHeader->th_ack << std::endl;
                 retransmissionQueue.pop_front();
             } else {
                 break;
@@ -487,7 +490,7 @@ void TCPSocket::retransmitPackets() {
 
     auto curTime = std::chrono::steady_clock::now();
     auto timeDiff = std::chrono::duration_cast<std::chrono::milliseconds>(curTime - lastRetransmitTime).count();
-    std::cout << "TIME DIFF: " << timeDiff << " " << retransmitInterval << std::endl;
+    // std::cout << "TIME DIFF: " << timeDiff << " " << retransmitInterval << std::endl;
     if (timeDiff < retransmitInterval) {
         return;
     }
@@ -633,6 +636,7 @@ struct siphash_key TCPSocket::generateSecretKey() {
     return key;
 }
 
+// This assumes header is in HOST byte order
 uint32_t TCPSocket::calculateSegmentEnd(std::shared_ptr<struct tcphdr> tcpHeader, std::string& payload) {
     int additionalByte = !!(tcpHeader->th_flags & (TH_SYN | TH_FIN));
     return tcpHeader->th_seq + payload.size() + additionalByte;

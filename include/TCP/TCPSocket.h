@@ -58,7 +58,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
         struct ComparePacketPtrs {
             bool operator()(const std::shared_ptr<TCPPacket>& p1, const std::shared_ptr<TCPPacket>& p2)
             {
-                return (*p1) < (*p2);
+                return (*p2) < (*p1);
             }
         };
         
@@ -73,7 +73,7 @@ class TCPSocket : public std::enable_shared_from_this<TCPSocket> {
             CLOSING,
             CLOSE_WAIT,
             LAST_ACK,
-            CLOSED,
+            CLOSED
         };
 
         static std::string toString(SocketState state) {

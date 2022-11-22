@@ -150,13 +150,12 @@ int TCPNode::connect(std::string& address, uint16_t port) {
 
     std::shared_ptr<TCPSocket> sock = std::make_shared<TCPSocket>(srcAddr, srcPort, address, port, 
                                                                   ipNode);
-
+    sock->socket_connect();
     // Add to socket descriptor table
     int socketId = nextSockId++;
     sd_table.insert(std::make_pair(socketId, sock));
     socket_tuple_table.insert(std::make_pair(sock->toTuple(), socketId));
 
-    sock->socket_connect();
     return socketId;
 }
 
@@ -304,16 +303,16 @@ void TCPNode::close(int socket) {
 
 void TCPNode::retransmitPackets() {
     while (true) {
-        // for (auto it = sd_table.cbegin(); it != sd_table.cend();) {
-            // auto sock = it->second;
-            // it++;
-            // sock->retransmitPackets();
-//
-            // TCPSocket::SocketState sockState = sock->getState();
-            // if (sockState == TCPSocket::SocketState::CLOSED) {
-                // deleteSocket(sock->toTuple());
-            // }
-        // }
+        for (auto it = sd_table.cbegin(); it != sd_table.cend();) {
+            auto sock = it->second;
+            it++;
+            sock->retransmitPackets();
+
+            TCPSocket::SocketState sockState = sock->getState();
+            if (sockState == TCPSocket::SocketState::CLOSED) {
+                deleteSocket(sock->toTuple());
+            }
+        }
     }
 }
 
@@ -402,6 +401,11 @@ void TCPNode::handleClient(
         sock->sendTCPPacket(tcpPacket) ;
         return;
     }
+
+    if (tcpHeader->th_seq > sock->getRecvNext()) {
+        sock->addEarlyArrival(tcpHeader, payload);
+        return;
+    }
     
     // Trim payload
     trimPayload(sock, tcpHeader, payload);
@@ -416,11 +420,13 @@ void TCPNode::handleClient(
 
     // 4) Check SYN bit
     if (tcpHeader->th_flags & TH_SYN) {
+        std::cout << "there is a syn bit" << std::endl;
         transitionFromOtherSYNBit(tcpHeader, payload, sock);
     }
 
      // 5) Check ACK bit
     if (tcpHeader->th_flags & TH_ACK) {
+        std::cout << "there is an ack bit" << std::endl;
         transitionFromOtherACKBit(ipHeader, tcpHeader, payload, sock);
 
         tcp_seq ack = tcpHeader->th_ack;
@@ -866,9 +872,7 @@ void TCPNode::processSegmentText(std::shared_ptr<struct tcphdr> tcpHeader,
             auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), 
                                                     sock->getRecvNext(), "");
             sock->sendTCPPacket(tcpPacket);
-        } else if (tcpHeader->th_seq > sock->getRecvNext()) {
-            sock->addEarlyArrival(tcpHeader, payload);
-        }
+        } 
         // TODO: consider piggy backing
     }   
     
