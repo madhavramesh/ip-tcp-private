@@ -469,6 +469,7 @@ void TCPSocket::receiveTCPPacket(
 
             if (segEnd <= tcpHeader->th_ack) {
                 retransmissionQueue.pop_front();
+                retransmitAttempts = 0; // important
             } else {
                 // Trim retransmission packet
                 if (segStart < tcpHeader->th_ack) {
@@ -489,8 +490,8 @@ void TCPSocket::receiveTCPPacket(
 
         if (retransmissionQueue.empty()) {
             retransmissionActive = false;
+            // retransmitAttempts = 0; // important
         }
-        retransmitAttempts = 0; // important
         lastRetransmitTime = std::chrono::steady_clock::now();
         probeAttempts = 0;
     }
@@ -553,10 +554,19 @@ void TCPSocket::retransmitPackets() {
     // flushRetransmission();
     // just send first item in queue
     auto firstPacket = retransmissionQueue.front(); // #todo pop_front?
+
+    firstPacket->tcpHeader->th_ack = htonl(recvBuffer.getNext());
+
+    uint32_t srcIP = inet_addr(socketTuple.getSrcAddr().c_str());
+    uint32_t destIP = inet_addr(socketTuple.getDestAddr().c_str());
+    firstPacket->tcpHeader->th_sum = 0;
+    firstPacket->tcpHeader->th_sum = computeTCPChecksum(srcIP, destIP, firstPacket->tcpHeader,
+                                                        firstPacket->payload);
+
     std::string newPayload(sizeof(struct tcphdr) + firstPacket->payload.size(), '\0');
     memcpy(&newPayload[0], firstPacket->tcpHeader.get(), sizeof(struct tcphdr));
     memcpy(&newPayload[sizeof(struct tcphdr)], &firstPacket->payload[0], firstPacket->payload.size());
-    ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
+    ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload,
                         TCP_PROTOCOL_NUMBER);
 }
 
@@ -567,6 +577,13 @@ void TCPSocket::flushRetransmission() {
     std::cout << "flushing retransmission queue" << std::endl;
     std::shared_lock lkShared(socketMutex);
     for (auto& packet : retransmissionQueue) {
+        packet->tcpHeader->th_ack = htonl(recvBuffer.getNext());
+
+        uint32_t srcIP = inet_addr(socketTuple.getSrcAddr().c_str());
+        uint32_t destIP = inet_addr(socketTuple.getDestAddr().c_str());
+        packet->tcpHeader->th_sum = 0;
+        packet->tcpHeader->th_sum = computeTCPChecksum(srcIP, destIP, packet->tcpHeader, packet->payload);
+
         std::string newPayload(sizeof(struct tcphdr) + packet->payload.size(), '\0');
         memcpy(&newPayload[0], packet->tcpHeader.get(), sizeof(struct tcphdr));
         memcpy(&newPayload[sizeof(struct tcphdr)], &packet->payload[0], packet->payload.size());

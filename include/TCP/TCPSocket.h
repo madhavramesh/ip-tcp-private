@@ -31,7 +31,7 @@ const uint16_t RECV_WINDOW_SIZE = 65535;
 // RFC states that lower bound for RTO should be 1 second
 // For this project, this is too long so we use 1 ms
 // #todo this was changed
-const int DEFAULT_RTO = 200;                   // milliseconds
+const int DEFAULT_RTO = 5;                     // milliseconds
 const int DEFAULT_PROBE_INTERVAL = 64;         // milliseconds
 const int MAX_PROBE_INTERVAL = 512;            // milliseconds
 
