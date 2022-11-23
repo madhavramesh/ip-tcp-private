@@ -342,7 +342,6 @@ int TCPSocket::readRecvBuf(int numBytes, std::string& buf, bool blocking) {
         // Must block on condition variable
         readCond.wait(lk);
         readSoFar += recvBuffer.read(numBytes - readSoFar, buf);
-        std::cout << allowRead << std::endl;
 
         if (!blocking && readSoFar > 0) {
             return readSoFar;
@@ -391,9 +390,13 @@ void TCPSocket::handleEarlyArrivals() {
         return;
     }
 
+    // this pops off old early arrivals
     auto packet = earlyArrivals.top();
     while (recvBuffer.getNext() >= calculateSegmentEnd(packet->tcpHeader, packet->payload)) {
         earlyArrivals.pop();
+        if (earlyArrivals.empty()) {
+            return;
+        }
         packet = earlyArrivals.top();
     }
 
@@ -409,6 +412,9 @@ void TCPSocket::handleEarlyArrivals() {
         buf = packet->payload.substr(offset);
 
         numCopied = recvBuffer.write(numToCopy, buf);
+        if (earlyArrivals.empty()) {
+            return;
+        }
         packet = earlyArrivals.top();
     }
 }
@@ -482,9 +488,9 @@ void TCPSocket::receiveTCPPacket(
         }
 
         if (retransmissionQueue.empty()) {
-            retransmitAttempts = 0;
             retransmissionActive = false;
         }
+        retransmitAttempts = 0; // important
         lastRetransmitTime = std::chrono::steady_clock::now();
         probeAttempts = 0;
     }
@@ -544,14 +550,21 @@ void TCPSocket::retransmitPackets() {
     }
 
     // Retransmit packets
-    flushRetransmission();
+    // flushRetransmission();
+    // just send first item in queue
+    auto firstPacket = retransmissionQueue.front(); // #todo pop_front?
+    std::string newPayload(sizeof(struct tcphdr) + firstPacket->payload.size(), '\0');
+    memcpy(&newPayload[0], firstPacket->tcpHeader.get(), sizeof(struct tcphdr));
+    memcpy(&newPayload[sizeof(struct tcphdr)], &firstPacket->payload[0], firstPacket->payload.size());
+    ipNode->sendMsg(socketTuple.getDestAddr(), socketTuple.getSrcAddr(), newPayload, 
+                        TCP_PROTOCOL_NUMBER);
 }
 
 void TCPSocket::flushRetransmission() {
     if (!retransmissionActive) {
         return;
     }
-
+    std::cout << "flushing retransmission queue" << std::endl;
     std::shared_lock lkShared(socketMutex);
     for (auto& packet : retransmissionQueue) {
         std::string newPayload(sizeof(struct tcphdr) + packet->payload.size(), '\0');

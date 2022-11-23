@@ -208,5 +208,8 @@ class TCPNode {
 
         void tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& payload);
 
+        void sfHelper(std::string filename, std::string ip, uint16_t port);
+        void rfHelper(std::string filename, int port);
+
         friend class IPNode;
 };

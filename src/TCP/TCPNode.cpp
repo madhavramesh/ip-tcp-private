@@ -191,7 +191,7 @@ int TCPNode::write(int socket, const std::string& buf, int numBytes) {
             return -1;
         case TCPSocket::SocketState::ESTABLISHED:
         case TCPSocket::SocketState::CLOSE_WAIT:
-            for (int i = 0; i < ((numBytes / MAX_TRANSMIT_UNIT) + 1); i++) {
+            for (int i = 0; i < ((numBytes / MAX_TRANSMIT_UNIT) + 1); i++) { // i think this is a problem at some point... should be max window size / bytes in flight
                 int start = i * MAX_TRANSMIT_UNIT;
                 int end = std::min(numBytes, start + MAX_TRANSMIT_UNIT);
                 std::string payload = buf.substr(start, end - start);
@@ -199,6 +199,7 @@ int TCPNode::write(int socket, const std::string& buf, int numBytes) {
                 auto tcpPacket = sock->createTCPPacket(TH_ACK, sock->getSendNext(), 
                                                        sock->getRecvNext(), payload);
                 sock->sendTCPPacket(tcpPacket);
+                // sleep(1);
             }
             return numBytes;
         case TCPSocket::SocketState::FIN_WAIT1:
@@ -217,7 +218,6 @@ int TCPNode::write(int socket, const std::string& buf, int numBytes) {
 
 /**
  * @brief Returns number of bytes read. If the call is blocking, it should loop until all bytes read
- * #todo IMPORTANT, caller should check for -1 to see if connection is closed
  * 
  * @param socket 
  * @param buf 
@@ -334,6 +334,7 @@ void TCPNode::close(int socket) {
         case TCPSocket::SocketState::SYN_RECV:
         case TCPSocket::SocketState::ESTABLISHED:
             {
+                std::cout << "close" << std::endl;
                 sock->flushRetransmission();
                 auto tcpPacket = sock->createTCPPacket(TH_FIN | TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
                 sock->sendTCPPacket(tcpPacket);
@@ -346,6 +347,7 @@ void TCPNode::close(int socket) {
             return;
         case TCPSocket::SocketState::CLOSE_WAIT: 
             {
+                std::cout << "close2" << std::endl;
                 sock->flushRetransmission();
                 auto tcpPacket = sock->createTCPPacket(TH_FIN | TH_ACK, sock->getSendNext(), sock->getRecvNext(), "");
                 sock->sendTCPPacket(tcpPacket);
@@ -460,7 +462,7 @@ void TCPNode::handleClient(
     
     // Hold out of order segments for later processing
     if (tcpHeader->th_seq > sock->getRecvNext()) {
-        std::cout << "EARLY ARRIVAL" << std::endl;
+        // std::cout << "EARLY ARRIVAL" << std::endl;
         sock->addEarlyArrival(tcpHeader, payload);
         return;
     }
@@ -707,7 +709,7 @@ void TCPNode::trimPayload(std::shared_ptr<TCPSocket> sock, std::shared_ptr<struc
 
 void TCPNode::transitionFromOtherRSTBit(std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
-
+    std::cout << "transitionFromOtherRSTBit" << std::endl;
     TCPSocket::SocketState sockState = sock->getState();
     if (sockState == TCPSocket::SocketState::SYN_RECV) {
         // Delete TCB
@@ -747,7 +749,7 @@ void TCPNode::transitionFromOtherRSTBit(std::shared_ptr<struct tcphdr> tcpHeader
 
 void TCPNode::transitionFromOtherSYNBit(std::shared_ptr<struct tcphdr> tcpHeader, 
         std::string& payload, std::shared_ptr<TCPSocket> sock) {
-
+    std::cout << "transitionFromOtherSYNBit" << std::endl;
     TCPSocket::SocketState sockState = sock->getState();
     if (sockState == TCPSocket::SocketState::SYN_RECV) {
         // Delete TCB
@@ -1069,18 +1071,7 @@ void TCPNode::tcpHandler(std::shared_ptr<struct ip> ipHeader, std::string& paylo
     receive(ipHeader, tcpHeader, remainingPayload);
 }
 
-/**
- * @brief Connect to the given ip and port, send the entirety of the specified file, 
- * and close the connection. Your driver must continue to accept other commands.
- * 
- * @param filename 
- * @param ip 
- * @param port 
- */
-void TCPNode::sf(std::string& filename, std::string ip, uint16_t port) {
-    // #todo: consider making connect blocking
-    // #todo: put this into a thread
-
+void TCPNode::sfHelper(std::string filename, std::string ip, uint16_t port) {
     // Connect to given ip and port
     int sd = this->connect(ip, port);
     if (sd == -1) {
@@ -1109,20 +1100,23 @@ void TCPNode::sf(std::string& filename, std::string ip, uint16_t port) {
     std::cout << "file sent: " << bytesTransferred << " bytes transferred" << std::endl;
     // Close the connection
     file.close();
-    // this->close(sd); #todo
+    this->close(sd); // #todo NEED to make sure blocks on incomplete queue all get acks before sending the fin!!!
 }
 
 /**
- * @brief Listen for a connection on the given port. 
- * Once established, write everything you can read from the socket to the given file. 
- * Once the other side closes the connection, close the connection as well. 
- * Your driver must continue to accept other commands. 
- * Hint: give /dev/stdout as the filename to print to the screen.
+ * @brief Connect to the given ip and port, send the entirety of the specified file, 
+ * and close the connection. Your driver must continue to accept other commands.
  * 
+ * @param filename 
  * @param ip 
  * @param port 
  */
-void TCPNode::rf(std::string& filename, int port) {
+void TCPNode::sf(std::string& filename, std::string ip, uint16_t port) {
+    std::thread t(&TCPNode::sfHelper, this, filename, ip, port);
+    t.detach();
+}
+
+void TCPNode::rfHelper(std::string filename, int port) {
     // #todo make this non blocking 
 
     // Create listener
@@ -1141,7 +1135,7 @@ void TCPNode::rf(std::string& filename, int port) {
     }
 
     // Write everything you can read from the socket to the given file
-    std::ofstream file(filename.c_str(), std::ios::binary | std::ios_base::app);
+    std::ofstream file(filename.c_str(), std::ios::binary | std::ios_base::app | std::ofstream::out);
     if (!file.is_open()) {
         std::cerr << red << "error: could not open file " << filename << color_reset << std::endl;
         return;
@@ -1152,7 +1146,7 @@ void TCPNode::rf(std::string& filename, int port) {
     int totalBytes = 0;
     int bytesTransferred;
 
-    while ((bytesTransferred = read(connSock, buffer, 65535, false)) > 0) {
+    while ((bytesTransferred = read(connSock, buffer, 65535, false)) > 0) { // this is a problem: early arrival packets aren't saved between calls!!
         file << buffer;
         totalBytes += bytesTransferred;
     }
@@ -1161,4 +1155,19 @@ void TCPNode::rf(std::string& filename, int port) {
     file.write(buffer.c_str(), bytesTransferred);
     std::cout << "file received: " << file.tellp() << " bytes transferred" << std::endl;
     file.close();
+}
+
+/**
+ * @brief Listen for a connection on the given port. 
+ * Once established, write everything you can read from the socket to the given file. 
+ * Once the other side closes the connection, close the connection as well. 
+ * Your driver must continue to accept other commands. 
+ * Hint: give /dev/stdout as the filename to print to the screen.
+ * 
+ * @param ip 
+ * @param port 
+ */
+void TCPNode::rf(std::string& filename, int port) {
+    std::thread t(&TCPNode::rfHelper, this, filename, port);
+    t.detach();
 }
