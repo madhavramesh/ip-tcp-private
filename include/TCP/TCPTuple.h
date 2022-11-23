@@ -56,7 +56,6 @@ class TCPTuple {
             uint32_t srcAddr = ip::address_v4::from_string(t.getSrcAddr()).to_ulong();
             uint32_t destAddr = ip::address_v4::from_string(t.getDestAddr()).to_ulong();
 
-            // TODO: Fix this so its an actual hash function
             auto hash1 = pair_int_hash(srcAddr, static_cast<uint32_t>(t.getSrcPort()));
             auto hash2 = pair_int_hash(destAddr, static_cast<uint32_t>(t.getDestPort()));
             return pair_int_hash(hash1, hash2);        

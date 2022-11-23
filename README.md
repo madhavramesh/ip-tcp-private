@@ -1,5 +1,31 @@
-# IP
+# TCP/IP
 
+# Summary
+
+Generic REPL.
+
+Our major files are the TCP node, socket, and command files. 
+
+The command file provides an interface between the REPL and TCP implementation. 
+
+Inside the TCP node file are implementations of a socket API, such as open, read, write etc. 
+
+Inside the TCP socket file is the implementation of the read and write buffers. For the read buffer, we chose a circular buffer. For the write buffer, we had a single priority queue that also functioned as a retransmission queue. 
+
+To keep track of sockets, we had table table mapping socket tuples (a tuple consisting of src addr, src port, dest addr, and dest port) to socket descriptors and another table mapping socket descriptors to sockets themselves.  
+
+# Measuring Performance
+
+On the ABC net with *no* lossy node, transferring a one megabyte file from A to B on the reference node takes roughly 1.5 seconds. On our implementation, it takes around 2 minutes to run. 
+
+On the ABC net *with* a lossy node, it takes roughly 10 seconds to transfer a 1 MB file from A to B on the reference node. Our node takes 2 minutes and 40 seconds to run. 
+
+
+# Packet Capture
+
+
+
+# (Old Answers Below)
 The handout specifies the following three questions:
 1. How you abstract your link layer and its interfaces
 2. The thread model for your RIP implementation
