@@ -304,7 +304,6 @@ void TCPCommands::shutdown(std::string& args) {
         return;
         }
     }   
-    std::cout << "the type is " << type << std::endl;
     tcpNode->shutdown(socketId, type);
 }
 
