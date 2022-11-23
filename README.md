@@ -23,6 +23,18 @@ On the ABC net *with* a lossy node, it takes roughly 10 seconds to transfer a 1 
 
 # Packet Capture
 
+![](rip.png)
+The three way handshake happens with packets 43, 45, and 46.
+
+![](rip1.png)
+Segment 3160 and 3161 are being retransmitted.
+
+![](rip3.png)
+2374 is being acked by 2375. 
+
+![](rip2.png)
+The picture shows the tear down with 3158 as the fin+ack, 3160 as the ack. 
+
 
 
 # (Old Answers Below)
